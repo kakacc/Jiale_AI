@@ -1,0 +1,381 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="prototype-build" content="online-static-site-2026-09-30">
+  <meta name="description" content="AI素材一期交互原型：商品重塑、场景生成、素材裂变，支持图片与视频。">
+  <title>BI-Dashboard - AI素材</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232563eb'/%3E%3Cpath d='M16 6l2.4 7.6L26 16l-7.6 2.4L16 26l-2.4-7.6L6 16l7.6-2.4z' fill='white'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./styles.css?v=20260930-online-static-v1">
+  <link rel="stylesheet" href="./scene-node.css?v=20260930-online-static-v1">
+</head>
+<body class="ai-edition-phase1">
+  <section class="prototype-control-deck" aria-label="原型预览工具">
+    <div class="prototype-control-inner">
+      <div class="prototype-control-context"><strong>原型预览工具</strong><span>不属于业务系统</span></div>
+      <div class="prototype-mode-switch" role="group" aria-label="原型预览状态"><span>原型状态</span><button class="active" data-prototype-mode="experience">纯体验</button><button data-prototype-mode="compare">技术查看</button></div>
+      <div class="prototype-governance-actions" id="prototypeGovernanceActions" aria-label="原型协作资料入口">
+        <button id="requirementAdjustmentsEntry" type="button"><span data-governance-verb>编辑</span>需求调整记录</button>
+        <button id="globalRulesEntry" type="button"><span data-governance-verb>编辑</span>全局规则</button>
+      </div>
+    </div>
+  </section>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand"><span class="brand-mark"><i></i><i></i><b></b></span><strong>BI-Dashboard</strong></div>
+      <nav class="main-nav">
+        <a class="nav-item" href="https://bi.jialenet.com/#/welcome" target="_blank" rel="noopener"><span class="nav-icon">⌂</span><span>欢迎页</span></a>
+        <a class="nav-item" href="https://bi.jialenet.com/#/dashboard/ad-report" target="_blank" rel="noopener"><span class="nav-icon">▥</span><span>BI 报表</span><i>⌄</i></a>
+        <div class="nav-group open" data-ai-edition="phase1">
+          <button class="nav-item active-parent ai-nav-toggle" aria-expanded="true"><span class="nav-icon sparkle">✦</span><span>AI素材（一期）</span><i>⌃</i></button>
+          <div class="sub-menu">
+            <button class="sub-nav active" data-view="workbench">工作台</button>
+            <button class="sub-nav" data-view="demands">视觉需求</button>
+            <button class="sub-nav" data-view="tasks">任务与消耗</button>
+            <button class="sub-nav" data-view="assets">素材库</button>
+            <button class="sub-nav" data-view="templates">原型库</button>
+            <button class="sub-nav" data-view="permissions">节点权限</button>
+          </div>
+        </div>
+        <div class="nav-group" data-ai-edition="full">
+          <button class="nav-item ai-nav-toggle" aria-expanded="false"><span class="nav-icon sparkle">✦</span><span>AI素材</span><i>⌄</i></button>
+          <div class="sub-menu" hidden>
+            <button class="sub-nav" data-view="workbench">工作台</button>
+            <button class="sub-nav" data-view="demands">视觉需求</button>
+            <button class="sub-nav" data-view="tasks">任务与消耗</button>
+            <button class="sub-nav" data-view="assets">素材库</button>
+            <button class="sub-nav" data-view="templates">原型库</button>
+            <button class="sub-nav" data-view="permissions">节点权限</button>
+          </div>
+        </div>
+        <div class="nav-item muted"><span class="nav-icon">♙</span><span>权限管理</span><i>⌄</i></div>
+        <div class="nav-item muted"><span class="nav-icon">▦</span><span>工具栏目</span><i>⌄</i></div>
+        <div class="nav-item muted"><span class="nav-icon">▤</span><span>日志管理</span><i>⌄</i></div>
+      </nav>
+      <div class="sidebar-foot"><span class="status-dot"></span><span>一期原型 · 演示数据</span></div>
+    </aside>
+
+    <main class="workspace">
+      <header class="system-header">
+        <div class="header-left"><button class="icon-button" id="toggleSidebar" aria-label="折叠侧栏">☰</button><div class="breadcrumb"><span id="breadcrumbModule">AI素材（一期）</span><i>/</i><b id="breadcrumb">工作台</b></div></div>
+        <div class="header-right"><button class="icon-button" id="refreshPage" aria-label="刷新当前页面">↻</button><button class="icon-button" id="prototypeInfo" aria-label="查看一期说明">ⓘ</button><span class="divider"></span><span class="avatar">管</span><span>管理员</span></div>
+      </header>
+      <div class="page-tabs"><span class="tab">⌂ 欢迎页</span><span class="tab selected" id="activeAiTab">✦ AI素材（一期）</span></div>
+
+      <section class="view active" data-page="workbench" data-spec-id="workbench-page" data-spec-label="工作台 · 页面整体">
+        <header class="page-head workbench-head">
+          <div><div class="title-row"><h1>工作台</h1></div><p>集中查看个人任务与额度消耗</p></div>
+          <div class="workbench-create-actions"><button class="button primary workbench-create" id="createTaskFromWorkbench"><span>＋</span>新建任务</button><button class="button secondary workbench-create" data-go="demands" data-open-demand-create><span>＋</span>新建视觉需求</button></div>
+        </header>
+
+        <section class="workbench-metric-scope">
+          <div class="page-time-filter workbench-metric-filter" data-time-filter="workbench" role="group" aria-label="工作台指标统计时间区间">
+            <span class="time-filter-title">指标统计区间<small>仅影响下方指标卡，不筛选待办列表</small></span>
+            <label class="time-filter-field"><span>开始日期</span><input type="date" data-time-start aria-label="工作台指标开始日期"></label>
+            <i>至</i>
+            <label class="time-filter-field"><span>结束日期</span><input type="date" data-time-end aria-label="工作台指标结束日期"></label>
+            <button class="button primary" type="button" data-time-apply>应用</button>
+            <button class="button secondary" type="button" data-time-reset>清空</button>
+          </div>
+
+          <div class="workbench-metrics" data-spec-id="workbench-metrics" data-spec-label="个人任务与额度概览">
+            <article class="workbench-metric pending"><div class="metric-icon">◷</div><div><span data-runtime-copy>待完成任务</span><strong id="workbenchPendingCount">3</strong><small id="workbenchPendingNote">点击下方任务可快速继续</small></div></article>
+            <article class="workbench-metric completed"><div class="metric-icon">◇</div><div><span data-runtime-copy>待完成需求</span><strong id="workbenchPendingDemandCount">0</strong></div></article>
+            <article class="workbench-metric quota"><div class="metric-icon">◈</div><div><span>我的已消耗额度</span><strong id="workbenchUserQuota" data-runtime-copy>¥0.00</strong></div></article>
+            <article class="workbench-metric org" data-admin-only><div class="metric-icon">▦</div><div><span>品牌中心已消耗额度</span><strong id="workbenchOrgQuota" data-runtime-copy>¥0.00</strong></div></article>
+          </div>
+        </section>
+
+        <section class="workbench-pending-grid">
+          <article class="panel workbench-task-panel" data-spec-id="workbench-unfinished-tasks" data-spec-label="待完成任务快捷列表">
+            <div class="panel-head workbench-panel-head"><div><h2>待完成任务</h2><p>继续最近暂存、执行中或待入库的任务</p></div><button class="text-button" data-go="tasks">查看全部</button></div>
+            <div class="workbench-task-list" id="workbenchTaskList"></div>
+          </article>
+          <article class="panel workbench-demand-panel" data-spec-id="workbench-pending-demands" data-spec-label="待完成需求快捷列表">
+            <div class="panel-head workbench-panel-head"><div><h2>待完成需求</h2></div><button class="text-button" data-go="demands">查看全部</button></div>
+            <div class="workbench-demand-list" id="workbenchDemandList"></div>
+          </article>
+        </section>
+      </section>
+
+      <section class="view" data-page="demands" data-spec-id="demands-page" data-spec-label="视觉需求 · 页面整体">
+        <header class="page-head compact list-page-head">
+          <div><h1>视觉需求</h1><p>先登记视觉需求，再基于已确认的需求创建 AI 素材任务。</p></div>
+          <div class="visual-demand-page-actions"><button class="button secondary" id="manageDemandOptions">配置维度选项值</button><span class="phase1-disabled-action" data-tip="开发中，敬请期待"><button class="button primary" id="createVisualDemand" disabled aria-disabled="true" title="开发中，敬请期待"><span>＋</span>新建视觉需求</button></span></div>
+        </header>
+        <div class="phase1-demand-placeholders" id="phase1DemandUnavailable" hidden>
+          <article class="phase1-feature-placeholder phase1-demand-metrics-placeholder"><p>开发中，敬请期待</p></article>
+          <article class="phase1-feature-placeholder phase1-demand-list-placeholder"><p>开发中，敬请期待</p></article>
+        </div>
+        <section class="visual-demand-metrics" data-spec-id="demands-metrics" data-spec-label="视觉需求概览">
+          <article><span class="visual-demand-metric-icon all">▦</span><div><small>全部需求</small><b id="demandMetricAll">0</b></div></article>
+          <article><span class="visual-demand-metric-icon pending">◷</span><div><small>待创建任务</small><b id="demandMetricPending">0</b></div></article>
+          <article><span class="visual-demand-metric-icon running">↗</span><div><small>任务处理中</small><b id="demandMetricRunning">0</b></div></article>
+          <article><span class="visual-demand-metric-icon done">✓</span><div><small>已完成</small><b id="demandMetricDone">0</b></div></article>
+        </section>
+        <article class="panel list-panel visual-demand-list-panel" data-spec-id="demands-list" data-spec-label="视觉需求查询与任务衔接">
+          <div class="filters visual-demand-filters is-collapsed" id="visualDemandFilters">
+            <label>需求ID<input id="demandIdFilter" placeholder="输入需求ID"></label>
+            <label>需求名称<input id="demandNameFilter" placeholder="输入需求名称"></label>
+            <label>优先级<select id="demandPriorityFilter"><option value="">全部</option></select></label>
+            <label>产品级别<select id="demandProductLevelFilter"><option value="">全部</option></select></label>
+            <label class="demand-filter-advanced">SPU<input id="demandSpuFilter" placeholder="输入SPU"></label>
+            <label class="demand-filter-advanced">渠道归类<select id="demandChannelFilter"><option value="">全部</option></select></label>
+            <label class="demand-filter-advanced">需求来源<select id="demandSourceFilter"><option value="">全部</option></select></label>
+            <label class="demand-filter-advanced">制作人<select id="demandOwnerFilter"><option value="">全部</option></select></label>
+            <div class="demand-filter-date-range demand-filter-advanced" role="group" aria-label="DDL日期区间"><span>DDL</span><div><label><span>开始日期</span><input id="demandDdlStartDate" type="date" aria-label="DDL开始日期"></label><i>至</i><label><span>结束日期</span><input id="demandDdlEndDate" type="date" aria-label="DDL结束日期"></label></div></div>
+            <div class="demand-filter-date-range demand-filter-advanced" role="group" aria-label="下需时间日期区间"><span>下需时间</span><div><label><span>开始日期</span><input id="demandRequestStartDate" type="date" aria-label="下需时间开始日期"></label><i>至</i><label><span>结束日期</span><input id="demandRequestEndDate" type="date" aria-label="下需时间结束日期"></label></div></div>
+            <label class="demand-filter-advanced">需求对接人<select id="demandRequesterFilter"><option value="">全部</option></select></label>
+            <div class="demand-filter-actions"><button class="button primary" id="searchDemands">搜索</button><button class="button secondary" id="resetDemandFilters">重置</button><button class="text-button demand-filter-toggle" id="toggleDemandFilters" type="button" aria-expanded="false">展开 <span>⌄</span></button></div>
+          </div>
+          <div class="table-wrap"><table class="visual-demand-table"><thead><tr><th>需求</th><th>优先级</th><th>产品级别</th><th>SPU</th><th>渠道归类</th><th>需求来源</th><th>制作人</th><th>下需时间 / DDL</th><th>需求对接人</th><th>进度状态</th><th>关联任务</th><th>操作</th></tr></thead><tbody id="visualDemandRows"></tbody></table></div>
+          <div class="pagination"><span id="visualDemandCount">共 0 条</span><button disabled>‹</button><button class="active">1</button><button disabled>›</button></div>
+        </article>
+      </section>
+
+      <section class="view" data-page="workspace" data-spec-id="workspace-page" data-spec-label="新建任务 · 页面整体">
+        <nav class="creation-steps" aria-label="任务创建步骤" data-spec-id="workspace-create-flow" data-spec-label="任务创建步骤"><span class="active" data-creation-step="1"><b>1</b>创建任务</span><i>→</i><span data-creation-step="2"><b>2</b>执行任务</span><i>→</i><span data-creation-step="3"><b>3</b>确认入库</span></nav>
+
+        <div class="visual-demand-source-banner" id="visualDemandSourceBanner" hidden><div><span>来源视觉需求</span><b id="visualDemandSourceTitle">—</b><small id="visualDemandSourceMeta">—</small></div><button class="text-button" id="backToVisualDemand">返回视觉需求</button></div>
+
+        <div class="stage-wrap active" id="nodeStage">
+          <article class="panel task-panel create-task-panel" data-spec-id="workspace-task-base" data-spec-label="任务基础信息">
+            <div class="panel-head"><div><h2>创建任务</h2><p>填写任务信息并选择需要执行的节点</p></div><span class="save-state" id="saveState">未保存</span></div>
+            <div class="form-grid task-base-grid">
+              <label class="field span-3"><span class="field-label">任务名称 <em class="required-mark">*</em></span><input id="taskName" maxlength="200" value="夏季新品多渠道素材优化" required aria-required="true"><small><span id="nameCount">11</span>/200</small></label>
+              <label class="field"><span class="field-label">需求部门 <em class="required-mark">*</em></span><select id="orgSelect" required aria-required="true"><option>品牌中心 / 视觉设计部</option><option>电商中心 / 内容运营组</option><option>海外事业部 / 广告投放组</option></select></label>
+              <label class="field"><span class="field-label">需求人 <em class="required-mark">*</em></span><select id="requesterSelect" required aria-required="true"><option>张三</option><option>李四</option><option>王五</option><option>赵六</option></select></label>
+              <label class="field"><span class="field-label">业务线 <em class="required-mark">*</em></span><select id="businessLineSelect" required aria-required="true"><option>品牌电商</option><option>海外电商</option><option>内容营销</option><option>直播业务</option></select></label>
+            </div>
+          </article>
+          <article class="panel workflow-panel selection-panel" data-spec-id="workspace-node-selection" data-spec-label="选择执行节点">
+            <div class="panel-head"><div><h2>选择要执行的节点</h2><p>可单选或多选；多选时固定按“商品重塑 → 场景生成 → 素材裂变”执行</p></div><div class="panel-head-actions selection-head-actions"><button class="button secondary" id="loadTemplate">从模板创建</button><button class="text-button" id="selectAllNodes">全选节点</button></div></div>
+            <div class="flow-list" id="flowList">
+              <section class="node-card" data-node="clean"><div class="node-summary"><label class="node-check"><input type="checkbox"><span>1</span></label><div class="node-title"><div><h3>商品重塑</h3><span class="node-status">点击选择</span></div><p>样板图/人台图生成高端3D透明底图</p></div><div class="node-meta"><span>预估 ¥2.40</span></div></div></section>
+              <div class="flow-connector"><i></i><span>选中相邻节点后按顺序传递</span></div>
+              <section class="node-card" data-node="scene"><div class="node-summary"><label class="node-check"><input type="checkbox"><span>2</span></label><div class="node-title"><div><h3>场景生成</h3><span class="node-status">点击选择</span></div><p>将素材放入指定人物、环境或营销场景</p></div><div class="node-meta"><span>预估 ¥8.40</span></div></div></section>
+              <div class="flow-connector"><i></i><span>选中相邻节点后按顺序传递</span></div>
+              <section class="node-card" data-node="detail"><div class="node-summary"><label class="node-check"><input type="checkbox"><span>3</span></label><div class="node-title"><div><h3>素材裂变</h3><span class="node-status">点击选择</span></div><p>精修素材（改表情、姿势、尺寸等），一张图裂变全套广告物料</p></div><div class="node-meta"><span>预估 ¥3.20</span></div></div><div class="phase1-node-unavailable" data-runtime-copy hidden>开发中，敬请期待</div></section>
+            </div>
+            <div class="stage-actions"><span id="selectionSummary">尚未选择节点</span><button class="button primary" id="confirmNodes" disabled>下一步：执行任务</button></div>
+          </article>
+        </div>
+
+        <div class="stage-wrap" id="taskStage" hidden data-spec-id="workspace-task-stage" data-spec-label="逐节点执行任务">
+          <div class="workspace-grid">
+            <div class="main-column">
+              <article class="panel node-parameter-panel" data-spec-id="workspace-node-config" data-spec-label="单节点配置、生成与生成结果">
+                <div class="panel-head"><div><h2 id="currentNodeTitle" data-editor-record-key="workspace-node-title-v2-clean">商品重塑</h2><p id="currentNodeSubtitle" data-editor-record-key="workspace-node-subtitle-clean">样板图/人台图生成高端3D透明底图</p></div><div class="panel-head-actions"><button class="button secondary" id="currentNodeTemplate">选择模板</button><span class="required-note" id="configNodeCount"></span></div></div>
+                <div class="node-config-list" id="nodeConfigList"></div>
+                <div class="generation-cache" id="generationCache"></div>
+                <div class="node-execution-actions"><p id="nodeNextHint">生成至少一份素材后，可进入下一步</p><div><button class="button secondary" id="previousNodeStep">上一步</button><button class="button primary" id="nextNodeStep" disabled>下一步</button></div></div>
+              </article>
+            </div>
+
+            <aside class="run-card" data-spec-id="workspace-run-summary" data-spec-label="执行摘要与开始执行">
+              <div class="run-head"><div><span class="eyebrow">RUN SUMMARY</span><h2>执行摘要</h2></div></div>
+              <div class="route-preview" id="routePreview"></div>
+              <dl class="summary-list" data-runtime-copy>
+                <div class="summary-token-row"><dt>已消耗总额度</dt><dd id="summaryConsumedQuota" data-runtime-copy aria-live="polite">¥0.00</dd></div>
+                <div><dt>任务名称</dt><dd id="summaryTaskName">—</dd></div>
+                <div><dt>需求部门</dt><dd id="summaryOrg">—</dd></div>
+                <div><dt>需求人</dt><dd id="summaryRequester">—</dd></div>
+                <div><dt>业务线</dt><dd id="summaryBusinessLine">—</dd></div>
+              </dl>
+              <p class="run-tip">节点生成完成后，使用模块右下角按钮进入下一节点</p>
+              <div class="run-task-actions" id="runTaskActions" hidden>
+                <div class="run-task-action-row"><button class="button secondary" id="saveDraft">暂存</button><button class="button secondary terminate-button" id="terminateTask">终止任务</button></div>
+                <button class="button primary full" id="terminateAndStore" hidden>终止并入库</button>
+              </div>
+            </aside>
+          </div>
+        </div>
+
+        <div class="stage-wrap" id="assetStage" hidden data-spec-id="workspace-asset-stage" data-spec-label="任务产出入库与临时缓存清理">
+          <article class="panel asset-stage-panel">
+            <div class="panel-head"><div><h2>确认入库</h2><p>素材进入素材库，模特原型与场景模板按类型进入原型库；未入库内容将在任务完成后清理</p></div><span class="status ready" id="assetStageStatus">待确认</span></div>
+            <div class="retained-assets" id="retainedAssetList"></div>
+            <div class="stage-actions asset-stage-actions"><span id="cleanupSummary">尚无待清理素材</span><div><button class="button secondary" id="previousAssetStep">返回上一步</button><button class="button primary" id="finishTask">完成任务并清理临时素材</button></div></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-page="tasks" data-spec-id="tasks-page" data-spec-label="任务与消耗 · 页面整体">
+        <header class="page-head compact list-page-head">
+          <div><h1>任务与消耗</h1><p>统一查看任务状态及节点的 AI 额度消耗与浪费情况。</p></div>
+          <div class="task-page-actions"><button class="button primary" id="createTaskFromTasks">新建任务</button></div>
+        </header>
+        <div class="task-record-pane task-record-usage" data-spec-id="tasks-usage" data-spec-label="任务与消耗 · 用量统计">
+          <article class="panel list-panel token-detail-panel" data-spec-id="usage-token-detail" data-spec-label="任务用量统计列表">
+            <div class="filters token-filters has-time-range" data-time-filter="usageDetails"><label>任务<input id="tokenTaskSearch" placeholder="搜索任务名称或 ID"></label><div class="token-multi-filter"><span>部门</span><details class="token-multi-select" id="tokenOrgFilter" data-token-multi-filter="org" data-all-label="全部部门"><summary><span data-token-multi-summary>全部部门</span><i aria-hidden="true">⌄</i></summary><div class="token-multi-menu" role="group" aria-label="部门多选"></div></details></div><div class="token-multi-filter"><span>执行人</span><details class="token-multi-select" id="tokenAccountFilter" data-token-multi-filter="account" data-all-label="全部执行人"><summary><span data-token-multi-summary>全部执行人</span><i aria-hidden="true">⌄</i></summary><div class="token-multi-menu" role="group" aria-label="执行人多选"></div></details></div><div class="token-detail-date-range"><label>开始日期<input type="date" data-time-start aria-label="任务用量开始日期"></label><label>结束日期<input type="date" data-time-end aria-label="任务用量结束日期"></label></div><button class="button primary" id="searchTokenDetails">搜索</button><button class="button secondary" id="resetTokenDetails">重置</button></div>
+            <div class="detail-insights usage-efficiency-insights">
+              <div><span>已额度消耗</span><b id="detailConsumedQuota">¥0.00</b><small>已消耗的总额度</small></div>
+              <div class="average-effective-card"><span>平均单位有效额度</span><div class="effective-media-values"><p><em>图片</em><b id="detailImageAverage">¥0.00</b></p><p><em>视频</em><b id="detailVideoAverage">¥0.00</b></p></div><small>素材所在节点耗费总额度 ÷ 最终入库通过数量</small></div>
+              <div><span>浪费额度</span><b id="detailWasteQuota">¥0.00</b><p class="waste-share">浪费额度占比 <strong id="detailWasteShare">0.0%</strong></p><small>浪费额度 ÷ 已消耗总额度</small></div>
+              <div><span>平均每节点调用AI次数</span><b id="detailCallsPerNode">0.00</b><small id="detailCallsPerNodeNote">AI 调用总次数 ÷ 总节点数</small></div>
+            </div>
+            <div class="table-wrap"><table class="token-table"><thead><tr><th>任务</th><th>部门 / 执行人</th><th>消耗额度</th><th>浪费额度</th><th>节点数</th><th>调用AI次数</th><th>任务状态</th><th>最近执行时间</th><th>操作</th></tr></thead><tbody id="tokenDetailRows"></tbody></table></div>
+            <div class="pagination"><span id="tokenDetailCount">共 0 条任务</span><button disabled>‹</button><button class="active">1</button><button disabled>›</button></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="view" data-page="assets" data-spec-id="assets-page" data-spec-label="素材库 · 页面整体">
+        <header class="page-head compact list-page-head"><div><h1>素材库</h1><p>集中查看任务确认入库的图片、视频素材，并在到期清理前及时下载保存。</p></div><div class="asset-page-actions"><button class="button secondary" id="manageAssetTags">标签管理</button><button class="button primary" id="downloadSelectedAssets" disabled>批量下载 <span id="selectedAssetCount">0</span></button></div></header>
+        <div class="asset-retention-banner" id="assetRetentionBanner" role="status" hidden><span class="asset-retention-icon" aria-hidden="true">!</span><p><b id="assetRetentionCount">0</b>个素材生成将超过1年，过期将被清理，请及时下载保存，<button class="asset-retention-link" id="assetExpiryFilter" type="button">点击查看</button>。如已处理请忽略</p></div>
+        <article class="panel list-panel" data-spec-id="assets-list" data-spec-label="素材库查询与到期管理">
+          <div class="filters asset-library-filters" id="assetLibraryFilters" aria-label="素材库筛选器">
+            <div class="asset-filter-primary-row">
+              <label>素材ID<input id="assetIdFilter" placeholder="多个ID请用英文逗号分隔"></label>
+              <label>素材名称<input id="assetSearch" placeholder="输入素材名称"></label>
+              <label>需求ID<input id="assetDemandIdFilter" placeholder="多个ID请用英文逗号分隔"></label>
+              <label>任务ID<input id="assetTaskIdFilter" placeholder="多个ID请用英文逗号分隔"></label>
+              <div class="asset-filter-actions"><button class="button primary" id="searchAssets">搜索</button><button class="button secondary" id="resetAssetFilters">重置</button><button class="asset-filter-toggle" id="toggleAssetFilters" type="button" aria-expanded="false" aria-controls="assetAdvancedFilters">展开筛选 <span aria-hidden="true">⌄</span></button></div>
+            </div>
+            <div class="asset-filter-advanced-row" id="assetAdvancedFilters" hidden>
+              <div class="asset-searchable-filter"><span>来源任务</span><details class="asset-multi-select" data-asset-multi-filter="sourceTask" data-all-label="全部任务"><summary><span data-asset-multi-summary>全部任务</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索来源任务"></label><div class="asset-multi-options" role="group" aria-label="来源任务多选"></div></div></details></div>
+              <div class="asset-searchable-filter"><span>来源节点</span><details class="asset-multi-select" data-asset-multi-filter="sourceNode" data-all-label="全部节点"><summary><span data-asset-multi-summary>全部节点</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索来源节点"></label><div class="asset-multi-options" role="group" aria-label="来源节点多选"></div></div></details></div>
+              <div class="asset-searchable-filter"><span>标签</span><details class="asset-multi-select" data-asset-multi-filter="tag" data-all-label="全部标签"><summary><span data-asset-multi-summary>全部标签</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索标签"></label><div class="asset-multi-options" role="group" aria-label="标签多选"></div></div></details></div>
+              <div class="asset-searchable-filter" data-runtime-copy><span>部门</span><details class="asset-multi-select" data-asset-multi-filter="org" data-all-label="全部部门"><summary><span data-asset-multi-summary>全部部门</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索部门"></label><div class="asset-multi-options" role="group" aria-label="部门多选"></div></div></details></div>
+              <div class="asset-searchable-filter" data-runtime-copy><span>制作人</span><details class="asset-multi-select" data-asset-multi-filter="creator" data-all-label="全部制作人"><summary><span data-asset-multi-summary>全部制作人</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索制作人"></label><div class="asset-multi-options" role="group" aria-label="制作人多选"></div></div></details></div>
+              <label>状态<select id="assetStatusFilter"><option value="">全部状态</option><option>正常</option><option>已过期</option></select></label>
+              <label>素材格式<select id="assetTypeFilter"><option>全部</option><option>图片</option><option>视频</option></select></label>
+              <label>SPU<input id="assetSpuFilter" placeholder="多个SPU请用英文逗号分隔"></label>
+              <div class="asset-searchable-filter"><span>素材类型</span><details class="asset-multi-select" data-asset-multi-filter="materialCategory" data-all-label="全部类型"><summary><span data-asset-multi-summary>全部类型</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索素材类型"></label><div class="asset-multi-options" role="group" aria-label="素材类型多选"></div></div></details></div>
+              <div class="asset-searchable-filter"><span>表达方式</span><details class="asset-multi-select" data-asset-multi-filter="expression" data-all-label="全部表达方式"><summary><span data-asset-multi-summary>全部表达方式</span><i aria-hidden="true">⌄</i></summary><div class="asset-multi-menu"><label class="asset-multi-search"><span aria-hidden="true">⌕</span><input type="search" data-asset-multi-search placeholder="搜索表达方式"></label><div class="asset-multi-options" role="group" aria-label="表达方式多选"></div></div></details></div>
+            </div>
+          </div>
+          <div class="table-wrap"><table class="asset-library-table"><thead><tr><th class="asset-select-column"><input id="selectAllAssets" type="checkbox" aria-label="全选当前列表素材"></th><th>素材</th><th>素材命名</th><th>标签</th><th>制作人 / 部门</th><th>状态</th><th>生成时间</th><th>操作</th></tr></thead><tbody id="assetRows"></tbody></table></div>
+          <div class="pagination"><span>共 5 条</span><button disabled>‹</button><button class="active">1</button><button disabled>›</button></div>
+        </article>
+      </section>
+
+      <section class="view" data-page="templates" data-spec-id="templates-page" data-spec-label="原型库 · 页面整体">
+        <header class="page-head compact list-page-head"><div><h1>原型库</h1><p id="prototypeLibraryDescription">按原型类型查看任务入库的模特等产出，并复用节点模板。</p></div></header>
+        <div class="library-tabs" role="tablist" aria-label="原型库分类">
+          <button class="active" data-library-tab="model" role="tab" aria-selected="true">模特原型 <small id="modelPrototypeCount">0</small></button>
+          <button data-library-tab="scene" role="tab" aria-selected="false">场景模板 <small id="scenePrototypeCount">0</small></button>
+          <button data-library-tab="config" role="tab" aria-selected="false"><span id="configTemplateTabLabel">节点模板</span> <small id="configTemplateCount">0</small></button>
+        </div>
+        <article class="panel list-panel prototype-library-panel" id="prototypeLibraryPanel" data-spec-id="prototypes-list" data-spec-label="模特原型与场景模板">
+          <div class="model-prototype-filters" id="modelPrototypeFilters" aria-label="模特原型筛选">
+            <div class="prototype-multi-filter"><span>性别</span><details class="prototype-multi-select" data-library-multi-filter="model.gender" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="性别多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>年龄段</span><details class="prototype-multi-select" data-library-multi-filter="model.ageRange" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="年龄段多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>地区</span><details class="prototype-multi-select" data-library-multi-filter="model.region" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="地区多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>身高</span><details class="prototype-multi-select" data-library-multi-filter="model.height" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="身高多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>体型</span><details class="prototype-multi-select" data-library-multi-filter="model.bodyType" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="体型多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>皮肤肤色</span><details class="prototype-multi-select" data-library-multi-filter="model.skinTone" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="皮肤肤色多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>头发颜色</span><details class="prototype-multi-select" data-library-multi-filter="model.hairColor" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="头发颜色多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>风格</span><details class="prototype-multi-select" data-library-multi-filter="model.style" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="风格多选"></div></details></div>
+            <div class="model-filter-actions"><button class="text-button" id="resetModelPrototypeFilters" type="button">重置</button><button class="button primary" id="filterModelPrototypes" type="button"><span aria-hidden="true">⌕</span>筛选</button></div>
+          </div>
+          <div class="model-prototype-filters" id="scenePrototypeFilters" aria-label="场景模板筛选" hidden>
+            <div class="prototype-multi-filter"><span>景别构图</span><details class="prototype-multi-select" data-library-multi-filter="scene.shotComposition" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="景别构图多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>色调风格</span><details class="prototype-multi-select" data-library-multi-filter="scene.toneStyle" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="色调风格多选"></div></details></div>
+            <div class="prototype-multi-filter"><span>艺术氛围</span><details class="prototype-multi-select" data-library-multi-filter="scene.artAtmosphere" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="艺术氛围多选"></div></details></div>
+            <div class="model-filter-actions"><button class="text-button" id="resetScenePrototypeFilters" type="button">重置</button><button class="button primary" id="filterScenePrototypes" type="button"><span aria-hidden="true">⌕</span>筛选</button></div>
+          </div>
+          <div class="model-prototype-grid" id="modelPrototypeGrid" aria-live="polite"></div>
+          <div class="scene-prototype-grid" id="scenePrototypeGrid" aria-live="polite" hidden></div>
+          <div class="phase1-feature-placeholder phase1-library-placeholder" id="phase1SceneUnavailable" hidden><div class="phase1-coming-icon">⌛</div><h2>场景模板</h2><p>开发中，敬请期待</p><span>该能力暂未包含在 AI素材（一期）中</span></div>
+          <div class="table-wrap" id="prototypeTableWrap" hidden><table><thead id="prototypeHead"></thead><tbody id="prototypeRows"></tbody></table></div>
+        </article>
+        <article class="panel list-panel config-template-panel" id="configTemplatePanel" data-spec-id="templates-list" data-spec-label="模板查询、复用与频次" hidden>
+          <div class="filters has-time-range template-library-filters" data-time-filter="templates"><label class="template-filter-name">模板名称<input id="templateSearch" placeholder="输入模板名称"></label><div class="prototype-multi-filter template-filter-kind"><span>模板类型</span><details class="prototype-multi-select" data-library-multi-filter="template.kind" data-all-label="全部类型"><summary><span data-library-multi-summary>全部类型</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="模板类型多选"></div></details></div><div class="prototype-multi-filter template-filter-node"><span>适用节点</span><details class="prototype-multi-select" data-library-multi-filter="template.node" data-all-label="全部节点"><summary><span data-library-multi-summary>全部节点</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="适用节点多选"></div></details></div><div class="prototype-multi-filter template-filter-output"><span>输出素材类型</span><details class="prototype-multi-select" data-library-multi-filter="template.outputType" data-all-label="全部"><summary><span data-library-multi-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="输出素材类型多选"></div></details></div><div class="prototype-multi-filter template-filter-creator"><span>创建人</span><details class="prototype-multi-select" data-library-multi-filter="template.creator" data-all-label="全部创建人"><summary><span data-library-multi-summary>全部创建人</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="创建人多选"></div></details></div><div class="prototype-multi-filter template-filter-org"><span>部门</span><details class="prototype-multi-select" data-library-multi-filter="template.org" data-all-label="全部部门"><summary><span data-library-multi-summary>全部部门</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="部门多选"></div></details></div><div class="template-date-range"><label>最近使用开始日期<input type="date" data-time-start aria-label="模板最近使用开始日期"></label><label>最近使用结束日期<input type="date" data-time-end aria-label="模板最近使用结束日期"></label></div><button class="button primary" id="searchTemplates">搜索</button><button class="button secondary" id="resetTemplateFilters">重置</button></div>
+          <div class="table-wrap"><table><thead><tr><th>模板名称</th><th>模板类型</th><th>适用节点</th><th>输出素材类型</th><th>创建人 / 部门</th><th>使用次数</th><th>最近使用</th><th>状态</th><th>操作</th></tr></thead><tbody id="templateRows"></tbody></table></div>
+        </article>
+      </section>
+
+      <section class="view" data-page="permissions" data-spec-id="permissions-page" data-spec-label="节点权限 · 页面整体">
+        <header class="page-head compact"><div><h1>节点权限</h1><p>一期以三个需求节点为权限点，控制查看与执行。</p></div><button class="button primary" id="savePermissions">保存权限</button></header>
+        <article class="panel permission-panel" data-spec-id="permissions-matrix" data-spec-label="角色与节点权限矩阵">
+          <div class="permission-note"><span>i</span><p>权限跟随部门角色配置。未授权节点在工作台不可选；后续如需细化到查看、编辑参数、审批等动作，可在此结构上扩展。</p></div>
+          <div class="table-wrap"><table class="permission-table"><thead><tr><th>角色</th><th>适用范围</th><th>商品重塑</th><th>场景生成</th><th>素材裂变</th><th>最近更新</th></tr></thead><tbody><tr><td><b>系统管理员</b><small>全部功能管理</small></td><td>全公司</td><td><label class="switch"><input type="checkbox" checked disabled><span></span></label></td><td><label class="switch"><input type="checkbox" checked disabled><span></span></label></td><td><label class="switch"><input type="checkbox" checked disabled><span></span></label></td><td>2026-09-12</td></tr><tr><td><b>视觉设计师</b><small>日常素材生产</small></td><td>品牌中心</td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td>2026-09-10</td></tr><tr><td><b>内容运营</b><small>营销内容制作</small></td><td>电商中心</td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td><label class="switch"><input type="checkbox"><span></span></label></td><td>2026-09-08</td></tr><tr><td><b>投放专员</b><small>广告素材组合</small></td><td>海外事业部</td><td><label class="switch"><input type="checkbox"><span></span></label></td><td><label class="switch"><input type="checkbox" checked><span></span></label></td><td><label class="switch"><input type="checkbox"><span></span></label></td><td>2026-09-06</td></tr></tbody></table></div>
+        </article>
+      </section>
+    </main>
+  </div>
+
+  <aside class="design-editor" id="designEditor" hidden aria-label="页面设计编辑器">
+    <div class="design-editor-head"><div><span>COPY MODE</span><h2>编辑文字</h2></div><button class="dialog-close" id="closeDesignEditor" aria-label="退出文字编辑">×</button></div>
+    <div class="design-editor-body">
+      <div class="editor-guide"><b>页面文字与下拉选项均可调整，编辑后自动保存</b><p>文字修改会立即保存并覆盖页面默认文案；下拉选项修改、新增、删除及选中项调整也会立即保存。配置会自动备份，可还原或导入、导出。</p></div>
+      <section class="editor-section">
+        <div class="editor-section-title"><b>当前选中</b><span id="selectedElementType">尚未选择</span></div>
+        <div class="editor-inline-fields editor-page-fields">
+          <label class="field">选择页面<select id="editorPageSelect"><option value="workbench">工作台</option><option value="demands">视觉需求</option><option value="workspace">新建任务</option><option value="tasks">任务与消耗</option><option value="assets">素材库</option><option value="templates">原型库</option><option value="permissions">节点权限</option><option value="global">全局导航与页头</option></select></label>
+          <label class="field">快速查找<input id="editorTextSearch" placeholder="搜索页面文字"></label>
+        </div>
+        <label class="field editor-copy-list-field">本页文字与下拉选项（已编辑内容优先）<select id="editorTextList" size="7" aria-label="本页全部可编辑文字与下拉选项"></select></label>
+        <label class="field" id="editorTextField">文字内容<textarea id="editorText" placeholder="请先点击页面中的可编辑文字" disabled></textarea></label>
+        <div class="editor-select-options" id="editorSelectOptions" hidden>
+          <div class="editor-section-title"><b>下拉选项</b><small>可管理选项并指定选中项</small></div>
+          <div class="editor-option-list" id="editorOptionList"></div>
+        </div>
+        <div class="editor-inline-fields">
+          <label class="field">字号<select id="editorFontSize" disabled><option value="">跟随默认</option><option value="13px">小</option><option value="16px">中</option><option value="20px">大</option><option value="24px">特大</option></select></label>
+          <label class="field">对齐<select id="editorTextAlign" disabled><option value="">跟随默认</option><option value="left">左对齐</option><option value="center">居中</option><option value="right">右对齐</option></select></label>
+        </div>
+      </section>
+      <section class="editor-section">
+        <div class="editor-section-title"><b>整体外观</b></div>
+        <label class="editor-color-row"><span><b>品牌主色</b><small>按钮、步骤与强调状态</small></span><input type="color" id="editorPrimaryColor" value="#2563eb"></label>
+        <label class="field">页面密度<select id="editorDensity"><option value="comfortable">舒适</option><option value="compact">紧凑</option></select></label>
+        <label class="field">卡片圆角 <span id="radiusValue">8px</span><input type="range" id="editorRadius" min="0" max="16" step="2" value="8"></label>
+      </section>
+      <section class="editor-section">
+        <div class="editor-section-title"><b>工作台模块</b><small>控制模块是否显示</small></div>
+        <label class="editor-switch-row"><span>创建步骤导航</span><input type="checkbox" id="showCreationSteps" checked></label>
+        <label class="editor-switch-row"><span>右侧执行摘要</span><input type="checkbox" id="showRunCard" checked></label>
+      </section>
+    </div>
+    <div class="design-editor-foot"><button class="button secondary" id="resetDesign">恢复默认</button><button class="button secondary" id="restoreDesignBackup" disabled>还原最近备份</button><button class="button secondary" id="exportDesignBackup">导出文字备份</button><button class="button secondary" id="importDesignBackup">导入文字备份</button><button class="button primary" id="saveDesign">保存页面设计</button><input id="importDesignBackupInput" type="file" accept="application/json,.json" hidden></div>
+  </aside>
+
+  <aside class="spec-editor" id="specEditor" hidden aria-label="原型说明编辑器">
+    <div class="spec-editor-resize-handle" id="specEditorResizeHandle" role="separator" aria-label="调整抽屉宽度" aria-orientation="vertical" tabindex="0" title="左右拖动调整宽度，双击恢复默认"></div>
+    <div class="spec-editor-head"><div><span id="specModeEyebrow">PROTOTYPE SPEC</span><h2 id="specEditorTitle">原型说明</h2></div><button class="dialog-close" id="closeSpecEditor" aria-label="退出原型说明">×</button></div>
+    <div class="spec-editor-body">
+      <div class="editor-guide" id="specEditorGuide"><b>点击任意业务组件创建说明</b><p>按钮、表单、卡片、表格、上传区等组件均可选中，并在统一富文本中记录完整说明。</p></div>
+      <section class="editor-section spec-list-section" id="specListView">
+        <select id="specPageSelect" hidden aria-hidden="true" tabindex="-1"><option value="workbench">工作台</option><option value="demands">视觉需求</option><option value="workspace">新建任务</option><option value="tasks">任务与消耗</option><option value="assets">素材库</option><option value="templates">原型库</option><option value="permissions">节点权限</option></select>
+        <label class="spec-page-description-field" for="specPageDescription">
+          <span><b>当前页面说明</b><small id="specPageDescriptionState">自动保存</small></span>
+          <textarea id="specPageDescription" rows="4" maxlength="2000" placeholder="输入当前页面的目标、范围和整体业务说明…"></textarea>
+        </label>
+        <div class="editor-section-title spec-list-heading"><div><b id="specListTitle">当前页面说明</b><small>选择一项进入说明详情</small></div><strong id="specTargetCount">0 个</strong></div>
+        <div class="spec-target-list" id="specTargetList"></div>
+        <div class="spec-list-empty" id="specListEmpty" hidden><b>当前页面暂无说明</b><p>请点击左侧业务页面中的组件创建说明。</p></div>
+      </section>
+      <section class="editor-section spec-content-section" id="specDetailView" hidden>
+        <div class="spec-detail-navigation"><button class="spec-back-button" id="backToSpecList" type="button">← 返回说明列表</button><span id="specBoundComponent"></span></div>
+        <div class="field spec-name-field"><div class="spec-name-row"><label for="specNameInput">说明名称</label><b id="selectedSpecTarget" hidden>说明详情</b><div class="spec-content-actions"><span id="specSaveState">尚未编辑</span><button class="spec-component-delete" id="deleteSelectedSpecTarget" type="button" hidden>删除说明</button><button class="spec-component-reset" id="resetSpecTarget" type="button" hidden>清空当前说明</button></div></div><input id="specNameInput" type="text" maxlength="80" placeholder="输入便于识别的说明名称"></div>
+        <div class="rich-toolbar" id="richToolbar" aria-label="富文本工具栏">
+          <select id="richBlock" aria-label="段落样式"><option value="p">正文</option><option value="h3">小标题</option><option value="blockquote">备注</option></select>
+          <button type="button" data-rich-command="bold" title="加粗"><b>B</b></button><button type="button" data-rich-command="italic" title="斜体"><i>I</i></button><button type="button" data-rich-command="underline" title="下划线"><u>U</u></button><span class="rich-format-group rich-color-tools" aria-label="文字颜色"><button type="button" class="rich-color-red" data-rich-command="foreColor" data-rich-value="#dc2626" aria-label="红色文字" title="红色文字">A</button><button type="button" class="rich-color-orange" data-rich-command="foreColor" data-rich-value="#f59e0b" aria-label="橙色文字" title="橙色文字">A</button><button type="button" class="rich-color-blue" data-rich-command="foreColor" data-rich-value="#2563eb" aria-label="蓝色文字" title="蓝色文字">A</button></span><span class="rich-format-group rich-size-tools" aria-label="字体大小"><button type="button" data-rich-command="fontSize" data-rich-value="2" aria-label="小号字体" title="小号字体">小</button><button type="button" data-rich-command="fontSize" data-rich-value="3" aria-label="中号字体" title="中号字体">中</button><button type="button" data-rich-command="fontSize" data-rich-value="5" aria-label="大号字体" title="大号字体">大</button></span><button type="button" data-rich-command="insertUnorderedList" title="项目符号">• 列表</button><button type="button" data-rich-command="insertOrderedList" title="编号列表">1. 列表</button><button type="button" data-rich-command="createLink" title="插入链接">链接</button><button type="button" data-rich-command="insertHorizontalRule" title="插入横线">横线</button><button type="button" id="insertRichTable" title="插入 2×2 表格">表格</button><span class="rich-table-tools" id="richTableTools" aria-label="表格操作"><button type="button" data-rich-table-action="add-row" title="在当前行下方新增一行" disabled>＋行</button><button type="button" data-rich-table-action="delete-row" title="删除当前行" disabled>－行</button><button type="button" data-rich-table-action="add-column" title="在当前列右侧新增一列" disabled>＋列</button><button type="button" data-rich-table-action="delete-column" title="删除当前列" disabled>－列</button><button type="button" class="rich-table-delete" data-rich-table-action="delete-table" title="删除当前表格" disabled>删除表格</button></span><button type="button" id="insertRichImage" title="插入本地图片">图片</button><button type="button" id="insertGlobalRuleRef" class="rich-rule-button" title="引入全局规则">引入规则</button><input id="richImageInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden>
+        </div>
+        <div class="rich-editor is-empty" id="specRichEditor" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="输入功能目标、业务规则、字段口径或交互约束…"></div>
+        <div class="spec-empty" id="specEmptyState">请在业务页面中点击需要说明的组件</div>
+      </section>
+    </div>
+    <div class="spec-editor-foot" id="specEditorFoot" hidden><button class="button primary" id="saveSpecs">保存说明</button></div>
+  </aside>
+
+  <div class="business-dialog-backdrop" id="businessDialogBackdrop" hidden></div>
+  <dialog class="dialog" id="mainDialog">
+    <div class="dialog-head"><div><h2 id="dialogTitle">详情</h2><p id="dialogSubtitle"></p></div><button class="dialog-close" aria-label="关闭">×</button></div>
+    <div class="dialog-body" id="dialogBody"></div>
+    <div class="dialog-foot"><span>Esc 取消</span><div><button class="button secondary dialog-cancel">取消</button><button class="button primary" id="dialogConfirm">确定</button></div></div>
+  </dialog>
+  <dialog class="media-preview-dialog" id="mediaPreviewDialog" aria-label="素材放大预览">
+    <button class="media-preview-close" id="closeMediaPreview" type="button" aria-label="关闭预览">×</button>
+    <div class="media-preview-content" id="mediaPreviewContent"></div>
+    <div class="media-preview-caption" id="mediaPreviewCaption"></div>
+  </dialog>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="./shared-design-state.js?v=20260930-online-static-v1"></script>
+  <!-- 线上版直接使用最新共享快照，不载入历史恢复文件。 -->
+  <script src="./app.js?v=20260930-online-static-v1"></script>
+</body>
+</html>
