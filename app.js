@@ -56,40 +56,14 @@
   const LEGACY_PLATFORM_SPACED_TERM = 'AI 素材';
   const LEGACY_VISUAL_DEMAND_TERM = '视觉需求管理';
   const sharedDesignStateEndpoint = null;
+  const sharedPrototypeContentEndpoint = null;
   let sharedDesignPersistTimer = 0;
+  let sharedPrototypeContentPersistTimer = 0;
 
-  async function fetchSharedDesignState() {
-    if (!sharedDesignStateEndpoint) return null;
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1200);
-    try {
-      const response = await fetch(sharedDesignStateEndpoint, { cache:'no-store', signal:controller.signal });
-      if (response.status === 204) return null;
-      if (!response.ok) throw new Error(`共享配置读取失败：${response.status}`);
-      const payload = await response.json();
-      return payload?.state && typeof payload.state === 'object' ? payload.state : null;
-    } catch {
-      return null;
-    } finally {
-      clearTimeout(timeout);
-    }
+  async function fetchSharedDesignState() { return null;
   }
 
-  async function persistSharedDesignStateNow() {
-    if (!sharedDesignStateEndpoint) return true;
-    clearTimeout(sharedDesignPersistTimer);
-    sharedDesignPersistTimer = 0;
-    try {
-      const response = await fetch(sharedDesignStateEndpoint, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json' },
-        body:JSON.stringify({ version:1, savedAt:new Date().toISOString(), state:designState }),
-        cache:'no-store'
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
+  async function persistSharedDesignStateNow() { return true;
   }
 
   function queueSharedDesignStatePersist() {
@@ -97,15 +71,40 @@
     sharedDesignPersistTimer = setTimeout(() => { persistSharedDesignStateNow(); }, 320);
   }
 
-  function beaconSharedDesignState() {
-    if (!sharedDesignStateEndpoint) return;
-    clearTimeout(sharedDesignPersistTimer);
-    sharedDesignPersistTimer = 0;
-    const body = JSON.stringify({ version:1, savedAt:new Date().toISOString(), state:designState });
+  function beaconSharedDesignState() { return;
+  }
+
+  function storedPrototypeContentValue(key, fallback) {
     try {
-      if (navigator.sendBeacon?.(sharedDesignStateEndpoint, new Blob([body], { type:'application/json' }))) return;
-    } catch {}
-    fetch(sharedDesignStateEndpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true }).catch(() => {});
+      const value = JSON.parse(localStorage.getItem(key) || 'null');
+      return value ?? fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  function sharedPrototypeContentPayload() {
+    const specs = storedPrototypeContentValue('ai-material-prototype-specs-v1', {});
+    const governance = storedPrototypeContentValue('ai-material-prototype-governance-v1', {});
+    const deletedTargets = storedPrototypeContentValue('ai-material-prototype-deleted-spec-targets-v1', []);
+    return {
+      version:1,
+      savedAt:new Date().toISOString(),
+      specs:specs && typeof specs === 'object' && !Array.isArray(specs) ? specs : {},
+      governance:governance && typeof governance === 'object' && !Array.isArray(governance) ? governance : {},
+      deletedTargets:Array.isArray(deletedTargets) ? deletedTargets : []
+    };
+  }
+
+  async function persistSharedPrototypeContentStateNow() { return true;
+  }
+
+  function queueSharedPrototypeContentStatePersist() {
+    clearTimeout(sharedPrototypeContentPersistTimer);
+    sharedPrototypeContentPersistTimer = setTimeout(() => { persistSharedPrototypeContentStateNow(); }, 320);
+  }
+
+  function beaconSharedPrototypeContentState() { return;
   }
 
   function migrateLegacyNodeNames(value) {
@@ -1009,6 +1008,7 @@
     prototypeGovernanceState.updatedAt = new Date().toISOString();
     try {
       localStorage.setItem(prototypeGovernanceStorageKey, JSON.stringify(prototypeGovernanceState));
+      queueSharedPrototypeContentStatePersist();
       return true;
     } catch { return false; }
   }
@@ -1033,6 +1033,7 @@
       const previous = JSON.parse(localStorage.getItem(specStorageKey) || 'null');
       if (previous && typeof previous === 'object') archiveSpecSnapshot(previous, `${reason}前自动备份`);
       localStorage.setItem(specStorageKey, JSON.stringify(specState));
+      queueSharedPrototypeContentStatePersist();
       return true;
     } catch { return false; }
   }
@@ -1060,6 +1061,7 @@
     const savedDeletedSpecTargets = JSON.parse(localStorage.getItem(deletedSpecTargetStorageKey) || '[]');
     if (Array.isArray(savedDeletedSpecTargets)) deletedSpecTargetIds = new Set(savedDeletedSpecTargets.filter(Boolean));
   } catch {}
+  queueSharedPrototypeContentStatePersist();
   const businessSpecComponentSelector = [
     'main','article','section:not(.view)','header','nav','aside','form','fieldset','label','button','a[href]',
     'input:not([type="hidden"])','select','textarea','table','thead','tbody','tr','th','td','dl','dt','dd',
@@ -1828,6 +1830,7 @@
   }
   function persistDeletedSpecTargets() {
     localStorage.setItem(deletedSpecTargetStorageKey, JSON.stringify([...deletedSpecTargetIds]));
+    queueSharedPrototypeContentStatePersist();
   }
   function addCollectedSpecTarget(targets, element) {
     if (!element?.dataset.specId) return;
@@ -2361,8 +2364,8 @@
     mirrorEditablePersistenceAliases();
     const localSaved = persistDesignState();
     const sharedSaved = await persistSharedDesignStateNow();
-    if (localSaved && sharedSaved) toast('页面文字已保存到当前浏览器');
-    else if (localSaved) toast('页面文字已保存到当前浏览器');
+    if (localSaved && sharedSaved) toast('页面文字已保存，并同步至 HTTP 与本地文件页面');
+    else if (localSaved) toast('已保存到当前浏览器；共享同步失败，请确认本地预览服务正在运行', 'warning');
     else toast('页面设计保存失败，请检查浏览器存储空间', 'warning');
   }
   function persistDesignState() {
@@ -6972,6 +6975,7 @@
   }));
 
   function flushDesignStateBeforeExit() {
+    beaconSharedPrototypeContentState();
     if (!designMode && !designDirty) return;
     commitSelectedEditableValue();
     mirrorEditablePersistenceAliases();
