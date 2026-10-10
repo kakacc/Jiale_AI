@@ -1,3 +1,5 @@
+(() => {
+  const localStorage = window.aiMaterialStandaloneStorage;
 (async () => {
   'use strict';
 
@@ -60,18 +62,55 @@
   let sharedDesignPersistTimer = 0;
   let sharedPrototypeContentPersistTimer = 0;
 
-  async function fetchSharedDesignState() { return null;
+  async function fetchSharedDesignState() {
+    if (!sharedDesignStateEndpoint) return null;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1200);
+    try {
+      const response = await fetch(sharedDesignStateEndpoint, { cache:'no-store', signal:controller.signal });
+      if (response.status === 204) return null;
+      if (!response.ok) throw new Error(`共享配置读取失败：${response.status}`);
+      const payload = await response.json();
+      return payload?.state && typeof payload.state === 'object' ? payload.state : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
-  async function persistSharedDesignStateNow() { return true;
+  async function persistSharedDesignStateNow() {
+    if (!sharedDesignStateEndpoint) return true;
+    clearTimeout(sharedDesignPersistTimer);
+    sharedDesignPersistTimer = 0;
+    try {
+      const response = await fetch(sharedDesignStateEndpoint, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify({ version:1, savedAt:new Date().toISOString(), state:designState }),
+        cache:'no-store'
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   function queueSharedDesignStatePersist() {
+    if (!sharedDesignStateEndpoint) return;
     clearTimeout(sharedDesignPersistTimer);
     sharedDesignPersistTimer = setTimeout(() => { persistSharedDesignStateNow(); }, 320);
   }
 
-  function beaconSharedDesignState() { return;
+  function beaconSharedDesignState() {
+    if (!sharedDesignStateEndpoint) return;
+    clearTimeout(sharedDesignPersistTimer);
+    sharedDesignPersistTimer = 0;
+    const body = JSON.stringify({ version:1, savedAt:new Date().toISOString(), state:designState });
+    try {
+      if (navigator.sendBeacon?.(sharedDesignStateEndpoint, new Blob([body], { type:'application/json' }))) return;
+    } catch {}
+    fetch(sharedDesignStateEndpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true }).catch(() => {});
   }
 
   function storedPrototypeContentValue(key, fallback) {
@@ -96,15 +135,38 @@
     };
   }
 
-  async function persistSharedPrototypeContentStateNow() { return true;
+  async function persistSharedPrototypeContentStateNow() {
+    if (!sharedPrototypeContentEndpoint) return true;
+    clearTimeout(sharedPrototypeContentPersistTimer);
+    sharedPrototypeContentPersistTimer = 0;
+    try {
+      const response = await fetch(sharedPrototypeContentEndpoint, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body:JSON.stringify(sharedPrototypeContentPayload()),
+        cache:'no-store'
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   function queueSharedPrototypeContentStatePersist() {
+    if (!sharedPrototypeContentEndpoint) return;
     clearTimeout(sharedPrototypeContentPersistTimer);
     sharedPrototypeContentPersistTimer = setTimeout(() => { persistSharedPrototypeContentStateNow(); }, 320);
   }
 
-  function beaconSharedPrototypeContentState() { return;
+  function beaconSharedPrototypeContentState() {
+    if (!sharedPrototypeContentEndpoint) return;
+    clearTimeout(sharedPrototypeContentPersistTimer);
+    sharedPrototypeContentPersistTimer = 0;
+    const body = JSON.stringify(sharedPrototypeContentPayload());
+    try {
+      if (navigator.sendBeacon?.(sharedPrototypeContentEndpoint, new Blob([body], { type:'application/json' }))) return;
+    } catch {}
+    fetch(sharedPrototypeContentEndpoint, { method:'POST', headers:{'Content-Type':'application/json'}, body, keepalive:true }).catch(() => {});
   }
 
   function migrateLegacyNodeNames(value) {
@@ -120,7 +182,10 @@
     return value;
   }
 
-  const viewNames = { workbench:'工作台', demands:'视觉需求', workspace:'新建任务', tasks:'任务与消耗', assets:'素材库', templates:'原型库', usage:'用量统计', permissions:'节点权限' };
+  const viewNames = { workbench:'工作台', demands:'视觉需求', workspace:'新建任务', tasks:'任务与消耗', assets:'素材库', templates:'原型库', usage:'用量统计', permissions:'节点权限', departments:'部门管理', users:'用户管理', menus:'菜单管理' };
+  let departmentManager = null;
+  let userManager = null;
+  let menuManager = null;
   const nodeMap = {
     clean: { name:'商品重塑', tokens:1200, desc:'样板图/人台图生成高端3D透明底图', model:'GPT Image 2', suffix:'清理结果' },
     scene: { name:'场景生成', tokens:2800, desc:'将素材放入指定人物、环境或营销场景', model:'GPT Image 2', suffix:'场景结果' },
@@ -333,7 +398,9 @@
     const producer = String(metadata.producer || seedMetadata.producer || '').trim();
     const producerDepartment = String(metadata.producerDepartment || seedMetadata.producerDepartment || '').trim();
     const tagIds = [...new Set(Array.isArray(metadata.tagIds) ? metadata.tagIds.map(String) : [])].filter(id => assetTags.some(tag => tag.id === id)).slice(0,20);
-    const normalized = [...row.slice(0,6), row[6] === '已过期' ? '已过期' : '正常', row[7], { ...metadata, sourceTask:metadata.sourceTask || sourceTask, sourceNode:metadata.sourceNode || sourceNode, creator:String(metadata.creator || ''), quality:metadata.quality || '自动适配', tagIds, visualDemandId:String(metadata.visualDemandId || ''), taskId:String(metadata.taskId || assetSyncMetaDefaults[row[1]]?.taskId || ''), spu:String(metadata.spu || ''), expression:String(metadata.expression || ''), mainSellingPoint:String(metadata.mainSellingPoint || ''), secondarySellingPoint:String(metadata.secondarySellingPoint || ''), scene:String(metadata.scene || ''), version:String(metadata.version || ''), materialCategory:String(metadata.materialCategory || ''), producer, producerDepartment, completedAt:String(metadata.completedAt || '') }];
+    const storedAt = String(metadata.storedAt || metadata.completedAt || row[7] || '');
+    const generatedAt = String(metadata.generatedAt || row[7] || '');
+    const normalized = [...row.slice(0,6), row[6] === '已过期' ? '已过期' : '正常', storedAt, { ...metadata, storedAt, generatedAt, sourceTask:metadata.sourceTask || sourceTask, sourceNode:metadata.sourceNode || sourceNode, creator:String(metadata.creator || ''), quality:metadata.quality || '自动适配', tagIds, visualDemandId:String(metadata.visualDemandId || ''), taskId:String(metadata.taskId || assetSyncMetaDefaults[row[1]]?.taskId || ''), spu:String(metadata.spu || ''), expression:String(metadata.expression || ''), mainSellingPoint:String(metadata.mainSellingPoint || ''), secondarySellingPoint:String(metadata.secondarySellingPoint || ''), scene:String(metadata.scene || ''), version:String(metadata.version || ''), materialCategory:String(metadata.materialCategory || ''), producer, producerDepartment, completedAt:String(metadata.completedAt || '') }];
     return normalized;
   });
   let selectedAssetIds = new Set();
@@ -367,6 +434,7 @@
     status:['启用','停用'].includes(item.status) ? item.status : '启用',
     uses:Number.isFinite(Number(item.uses)) ? Math.max(0, Number(item.uses)) : ((item.kind === 'model' ? modelPrototypeSeedUses : scenePrototypeSeedUses)[item.id] || 0)
   } : item);
+  (window.aiMaterialPublishedPrototypeState || []).forEach(saved => { const item = prototypes.find(item => item.id === saved.id); if (item) { item.status = saved.status; item.uses = saved.uses; } });
   localStorage.setItem('ai-material-prototypes-v1', JSON.stringify(prototypes));
   let templates = migrateLegacyNodeNames(loadStored('ai-material-templates-v2', templateDefaults));
 
@@ -866,8 +934,53 @@
   }
 
   const sampleSpecs = {
+    'menus-page': {
+      feature:'<p>沿用原平台菜单管理的菜单树、配置表单和按钮权限表，将 AI 素材功能权限接入现有菜单与按钮体系。</p>',
+      data:'<p>保留原平台已观察到的菜单及按钮标识。当前 AI 素材五个业务菜单包含 18 个权限点，其中 15 个本期可用；查看视觉需求、管理视觉需求及素材裂变暂缓。独立节点操作挂在任务与消耗下，不恢复节点权限菜单；AI素材（参考）标注非本期需求。</p>',
+      interaction:'<p>支持按名称或标识搜索、展开折叠菜单树，查看和维护菜单、按钮权限。菜单与按钮标识全局唯一，不能形成循环层级；保存仅修改本地原型。</p>'
+    },
+    'menu-permission-tree': {
+      feature:'<p>原菜单和 AI 素材新增权限按层级展示；按钮权限不显示为业务导航菜单。</p>',
+      data:'<p>菜单查看权限和具体操作权限独立；商品重塑、场景生成及素材裂变分别维护独立标识。</p>',
+      interaction:'<p>搜索匹配名称或标识并保留其祖先菜单；点击节点查看配置，选中菜单可新增下级或删除。被其他权限依赖的查看权限不可直接删除。</p>'
+    },
+    'menu-permission-form': {
+      feature:'<p>复用原菜单名称、菜单标识、上级菜单、菜单类型、路由、视图、国际化、排序、状态开关和备注配置。按钮类型省略路由及视图字段。</p>',
+      data:'<p>AI 操作权限备注说明控制内容，前置权限指向对应查看权限；暂缓项保持未启用。</p>',
+      interaction:'<p>修改或新增保存时校验名称、标识、唯一性、上级关系及前置依赖。此页注册权限点，不代替角色授权或后端权限校验，不按创建人或部门引入数据权限。</p>'
+    },
+    'menu-button-permissions': {
+      feature:'<p>使用原平台按钮名称、按钮标识和按钮国际化表格配置菜单下的权限点。</p>',
+      data:'<p>新建任务权限归属任务与消耗；额度查看与任务查看分开。确认入库、终止任务、素材下载、素材编辑、标签管理及原型管理独立配置。</p>',
+      interaction:'<p>支持新增、修改、移除按钮权限并随所属菜单保存。操作权限依赖查看权限的规则供角色授权时使用；未获授权默认不允许使用，业务状态要求须单独校验。</p>'
+    },
+    'users-page': {
+      feature:'<p>保留原平台用户管理的新增、编辑、删除、赋予角色、初始化密码与超管不可修改规则，仅增加组织架构卡片及用户所属部门。</p>',
+      data:'<p>保留原用户的用户名、昵称、头像、用户类型、手机、邮箱、状态及备注。在列表与原新增/编辑表单上补充所属部门；新增及编辑用户时所属部门必填，未选择有效部门时提示并阻止保存。原型内操作保存在本地，不修改原平台。</p>',
+      interaction:'<p>原有筛选、展开/收起、刷新、显示/隐藏搜索、打印、列显示设置和分页结构保留。编辑密码保持不可修改；原有操作不增加部门负责人删除限制。</p>'
+    },
+    'users-organization': {
+      feature:'<p>复用部门管理的组织架构卡片与同源部门数据。</p>',
+      data:'<p>按部门管理的层级与排序显示组织树；成员数统计当前用户列表对应部门及下级部门的用户。</p>',
+      interaction:'<p>支持搜索部门名称、展开/折叠节点与整树。点击部门筛选该部门及下级用户，点击全部部门恢复全部用户；组织条件与原用户筛选条件组合生效。</p>'
+    },
+    'users-list': {
+      feature:'<p>在原平台用户列表中仅新增所属部门列。</p>',
+      data:'<p>原列顺序与信息保留，空联系方式保持原空值；超管不显示行选择与编辑，只保留不可修改提示。分页选项与原平台一致为 10、20、30、40、50、100 条。</p>',
+      interaction:'<p>保留原用户名、昵称筛选和手机、邮箱、状态高级筛选；保留编辑及更多菜单中的删除、赋予角色、初始化密码。组织架构变化和用户部门修改后同步刷新。</p>'
+    },
+    'departments-page': {
+      feature:'<p>在权限管理下维护组织架构、部门负责人及成员归属。提供组织树、部门列表、新增、编辑、成员维护和部门详情。</p>',
+      data:'<p>部门字段包含名称、编码、上级部门、负责人、排序及备注。部门编码唯一；同级部门名称不可重复。根部门不可删除。成员复用原型中的平台用户目录，每位成员归属一个部门。</p>',
+      interaction:'<p>新增下级默认带入上级部门；编辑时不可将部门移入自身或其后代。所有部门均可正常选择与维护，不提供部门禁用或启用操作。有下级部门或直属成员时不可删除。原型中的调整仅保存在本地浏览器。</p>'
+    },
+    'department-list': {
+      feature:'<p>左侧组织树限定部门及其下级范围，右侧以树形表格呈现部门信息。</p>',
+      data:'<p>支持部门名称和编码组合筛选。列表不展示直属成员列；组织树的成员数包含下级部门。按同级排序值升序展示，支持分页。</p>',
+      interaction:'<p>搜索和重置同步更新列表；支持展开、折叠及选择部门。成员维护支持按姓名或用户 ID 搜索，筛选后保留所选成员；成员迁移前明确显示原部门与目标部门。删除前校验根部门、下级部门及成员关联。</p>'
+    },
     'workbench-page': {
-      feature:'<p>作为“AI素材”与“AI素材（一期）”下的默认首页，为当前登录用户汇总待完成任务、待完成需求和额度消耗。AI素材（一期）复用同一套页面内容，但视觉需求能力显示“开发中，敬请期待”。</p>',
+      feature:'<p>作为“AI素材”与“AI素材（参考）”下的默认首页，为当前登录用户汇总待完成任务、待完成需求和额度消耗。AI素材复用同一套页面内容，但视觉需求能力显示“开发中，敬请期待”。</p>',
       data:'<p>页面数据按当前登录用户过滤；管理员角色额外返回其管理范围内的部门累计额度。指标卡时间区间维度为 D-AI-TIME-RANGE：待完成任务与待完成需求均按最后更新时间，额度指标按节点实际执行时间；下方两组待办列表不应用该时间区间。</p>',
       interaction:'<p>进入“AI素材”时默认打开本页；左侧“新建任务”为蓝色主按钮，右侧“新建视觉需求”为白色次级按钮。点击待完成任务进入当前步骤，点击待完成需求查看详情。指标统计时间只刷新指标卡，两组待办列表始终展示全部。</p>'
     },
@@ -887,9 +1000,9 @@
       interaction:'<p>点击“查看需求”打开需求详情；“查看全部”进入视觉需求列表。</p>'
     },
     'demands-page': {
-      feature:'<p>作为创建 AI 素材任务的前置业务环节，集中登记、查询和维护视觉需求，并从需求发起任务。AI素材（一期）暂不开放需求业务功能，但保留“配置维度选项值”入口及完整配置能力。</p>',
+      feature:'<p>作为创建 AI 素材任务的前置业务环节，集中登记、查询和维护视觉需求，并从需求发起任务。AI素材暂不开放需求业务功能，但保留“配置维度选项值”入口及完整配置能力。</p>',
       data:'<p>创建阶段填写需求名称、需求 SPU、业务渠道、产品级别、需求来源、下需时间、DDL、渠道归类、素材格式、表达方式、主卖点、场景、辅助卖点、模特体型、素材类型、制作要求、制作参考、FB 信息、EDM 信息、需求对接人、优先级和制作人。产品级别、需求来源、主卖点、场景、制作人和素材类型均为必填。新建与编辑使用同一组选项值，所有下拉均支持搜索；新建默认业务渠道 DTC、产品级别无、需求来源素材下需、渠道归类 Paid Social。制作要求、制作参考、FB 信息和 EDM 信息均独占一行。进度状态、完成时间、版本、制作周期和关联素材由关联任务在执行或完成后自动同步。</p>',
-      interaction:'<p>AI素材（一期）默认展开并位于完整版AI素材上方。视觉需求页保留标题栏及右上角“配置维度选项值”；“新建视觉需求”置灰不可用，悬浮提示“开发中，敬请期待”；原指标卡与列表位置分别使用白底不可用区域居中显示“开发中，敬请期待”。完整版正常流程为“新建视觉需求 → 保存需求 → 创建任务 → 执行与入库”。新建与编辑弹窗不展示“创建阶段填写 22 项需求属性”的顶部提示卡。产品级别、需求来源、渠道归类和优先级在字段名旁提供说明气泡；制作要求、制作参考、FB 信息与 EDM 信息均使用支持换行的大文本框。需求对接人默认当前账号；制作人默认不选，但保存前必须选择。两者均从不受数据权限限制的平台完整用户目录中按部门树形单选并支持搜索。任务创建时自动带入需求名称、需求对接人、业务线、素材格式、制作要求并推荐执行节点；任务运行信息仅在需求详情中查看，不在新建表单中填写。</p>'
+      interaction:'<p>AI素材默认展开；AI素材（参考）位于主导航最底部，并标注“非本期需求”；两者的子菜单均不展示节点权限。视觉需求页保留标题栏及右上角“配置维度选项值”；“新建视觉需求”置灰不可用，悬浮提示“开发中，敬请期待”；原指标卡与列表位置分别使用白底不可用区域居中显示“开发中，敬请期待”。完整版正常流程为“新建视觉需求 → 保存需求 → 创建任务 → 执行与入库”。新建与编辑弹窗不展示“创建阶段填写 22 项需求属性”的顶部提示卡。产品级别、需求来源、渠道归类和优先级在字段名旁提供说明气泡；制作要求、制作参考、FB 信息与 EDM 信息均使用支持换行的大文本框。需求对接人默认当前账号；制作人默认不选，但保存前必须选择。两者均从不受数据权限限制的平台完整用户目录中按部门树形单选并支持搜索。任务创建时自动带入需求名称、需求对接人、业务线、素材格式、制作要求并推荐执行节点；任务运行信息仅在需求详情中查看，不在新建表单中填写。</p>'
     },
     'demands-metrics': {
       feature:'<p>快速展示全部视觉需求以及待创建任务、任务处理中、已完成三类数量。</p>',
@@ -907,7 +1020,7 @@
       interaction:'<ol><li>从视觉需求进入后自动带入任务信息和建议节点。</li><li>第二步一次只配置和执行一个节点，生成后才能进入下一节点，并可返回上一步。</li><li>全部节点完成后统一确认入库，也可返回最后一个执行节点。</li></ol><p>未额外说明长度限制时，普通文本输入框最多输入并保存 200 个字符，大文本框最多输入并保存 1500 个字符；存在明确限制时以字段限定为准。</p>'
     },
     'workspace-node-selection': {
-      feature:'<p>与任务基础信息共同组成“创建任务”步骤。完整版允许选择商品重塑、场景生成、素材裂变中的一个或多个节点；AI素材（一期）中节点3素材裂变不可选择并显示“开发中，敬请期待”。</p>',
+      feature:'<p>与任务基础信息共同组成“创建任务”步骤。完整版允许选择商品重塑、场景生成、素材裂变中的一个或多个节点；AI素材中节点3素材裂变不可选择并显示“开发中，敬请期待”。</p>',
       data:'<p>保存节点编码、节点名称、排序和预计消耗额度。额度按当前模型单价乘以预计消耗量计算，节点组合写入任务配置快照。</p>',
       interaction:'<p>点击整张节点卡或复选框均可选中；至少选择一个节点后，“下一步”按钮才可用。</p>'
     },
@@ -928,7 +1041,7 @@
     },
     'workspace-asset-stage': {
       feature:'<p>汇总各节点在生成结果中预选入库的素材，由执行人进行最终确认。</p>',
-      data:'<p>正式入库时记录素材 ID、来源需求与任务 ID、节点、生成时间、业务属性和服务器存储状态；普通生成素材进入素材库，模特原型与场景模板分别进入原型库对应 Tab。</p>',
+      data:'<p>正式入库时记录素材 ID、来源需求与任务 ID、节点、入库时间、业务属性和服务器存储状态；普通生成素材进入素材库，模特原型与场景模板分别进入原型库对应 Tab。</p>',
       interaction:'<p>预选产出默认勾选入库，可逐项取消。完成任务后按产出类型写入素材库或原型库，并清理全部未入库的临时内容。</p>'
     },
     'tasks-list': {
@@ -938,18 +1051,18 @@
     },
     'assets-list': {
       feature:'<p>记录执行人确认入库的图片、视频素材，支持业务信息补录、标签管理和一年期到期清理提示。</p>',
-      data:'<p>列表的素材列将素材 ID 显示在缩略图下方，并展示素材命名、标签、制作人/部门、正常或已过期状态及生成时间；不展示文件名称、素材格式、SPU、业务素材类型、来源任务和来源节点。素材详情标题下方不重复展示素材 ID，详情主体的素材身份只显示素材 ID、不显示文件名称。详情的来源信息展示来源需求与需求 ID、来源任务与任务 ID、来源节点、制作人及部门；制作人和部门由只读人员身份目录成对写入，不属于可补录的业务信息。关联需求有制作人时按该人员查目录，独立任务按当前登录用户查目录；无法映射所属部门时保留制作人显示、部门留空。业务信息展示素材格式、生成时间、SPU、表达方式、主卖点、辅助卖点、场景、自定义版本、素材类型和按 9 月视觉安排总表规则生成的素材命名。通过需求创建的任务自动带入需求属性；独立任务产出的属性保持空白并可编辑。</p>',
-      interaction:'<p>支持按素材名称或 ID、需求 ID、任务 ID、素材格式、素材类型、来源任务及其节点、部门及其制作人、标签、状态和生成时间组合筛选。编辑素材信息时，除辅助卖点外，SPU、表达方式、主卖点、场景、版本和素材类型全部必填，版本为空时默认填入 V1；表达方式、场景和素材类型复用视觉需求同源单选项，主卖点与辅助卖点复用视觉需求同源选项并支持多选；素材命名随编辑内容实时刷新并可复制。标签管理仅维护标签名称，不配置颜色；调整标签弹窗仅展示素材 ID 与素材格式，不展示文件名或标签管理入口，支持搜索标签，每个素材最多选择 20 个标签。制作人和部门不可编辑，并共同作为素材个人、部门归属及查看权限的判断依据；二者必须来自同一人员身份映射，不使用创建人或任务的可编辑需求部门兜底。历史素材或新素材缺失任一身份字段时仅全局素材权限可见。来源任务或有部门素材查看权限时的部门可单独选择，子级选项随父级变化。素材生成满一年后显示已过期并不可下载或再次选用；到期前一个月仅对当前用户可见的临期素材显示清理横幅，点击“点击查看”按生成时间定位。可调整标签和其他素材业务信息，批量下载仅包含正常素材。未额外说明长度限制时，普通文本输入框最多输入并保存 200 个字符，大文本框最多输入并保存 1500 个字符；存在明确限制时以字段限定为准。</p>'
+      data:'<p>列表的素材列将素材 ID 显示在缩略图下方，并展示素材命名、标签、制作人/部门、正常或已过期状态及入库时间，并在入库时间下方以小字展示过期清理时间（入库满一年）；不展示文件名称、素材格式、SPU、业务素材类型、来源任务和来源节点。素材详情标题下方不重复展示素材 ID，详情主体的素材身份只显示素材 ID、不显示文件名称。详情的来源信息展示来源需求与需求 ID、来源任务与任务 ID、来源节点、制作人及部门；制作人和部门由只读人员身份目录成对写入，不属于可补录的业务信息。关联需求有制作人时按该人员查目录，独立任务按当前登录用户查目录；无法映射所属部门时保留制作人显示、部门留空。业务信息展示素材格式、入库时间、过期清理时间、SPU、表达方式、主卖点、辅助卖点、场景、自定义版本、素材类型和按 9 月视觉安排总表规则生成的素材命名。通过需求创建的任务自动带入需求属性；独立任务产出的属性保持空白并可编辑。</p>',
+      interaction:'<p>支持按素材名称或 ID、需求 ID、任务 ID、素材格式、素材类型、来源任务及其节点、部门及其制作人、标签、状态和入库时间组合筛选。编辑素材信息时，除辅助卖点外，SPU、表达方式、主卖点、场景、版本和素材类型全部必填，版本为空时默认填入 V1；表达方式、场景和素材类型复用视觉需求同源单选项，主卖点与辅助卖点复用视觉需求同源选项并支持多选；素材命名随编辑内容实时刷新并可复制。标签管理仅维护标签名称，不配置颜色；调整标签弹窗仅展示素材 ID 与素材格式，不展示文件名或标签管理入口，支持搜索标签，每个素材最多选择 20 个标签。制作人和部门不可编辑，并共同作为素材个人、部门归属及查看权限的判断依据；二者必须来自同一人员身份映射，不使用创建人或任务的可编辑需求部门兜底。历史素材或新素材缺失任一身份字段时仅全局素材权限可见。来源任务或有部门素材查看权限时的部门可单独选择，子级选项随父级变化。素材入库满一年后显示已过期并不可下载或再次选用；到期前一个月仅对当前用户可见的临期素材显示清理横幅，点击“点击查看”定位临期素材。可调整标签和其他素材业务信息，批量下载仅包含正常素材。未额外说明长度限制时，普通文本输入框最多输入并保存 200 个字符，大文本框最多输入并保存 1500 个字符；存在明确限制时以字段限定为准。</p>'
     },
     'prototypes-list': {
-      feature:'<p>按类型管理任务确认入库的模特原型与场景模板，并提供给新任务的原型选择器复用。AI素材（一期）中场景模板不可用并显示“开发中，敬请期待”。</p>',
+      feature:'<p>按类型管理任务确认入库的模特原型与场景模板，并提供给新任务的原型选择器复用。AI素材中场景模板不可用并显示“开发中，敬请期待”。</p>',
       data:'<p>模特原型记录模特图片、启用/停用状态、累计使用次数，以及节点2“场景生成 → 素材处理 → 模特”的八项配置快照。场景模板记录场景图片、启用/停用状态、累计使用次数，以及同节点“场景”模块的景别构图、色调风格和艺术氛围配置快照。</p>',
-      interaction:'<p>通过 Tab 切换模特原型、场景模板和模板配置；AI素材（一期）点击场景模板后仅显示开发中占位，模板配置仅展示节点模板，新建任务关闭任务模板创建入口，且各节点不能从场景模板选择。完整版继续支持三类列表筛选、查看与维护。</p>'
+      interaction:'<p>通过 Tab 切换模特原型、场景模板和模板配置；AI素材点击场景模板后仅显示开发中占位，模板配置仅展示节点模板，新建任务关闭任务模板创建入口，且各节点不能从场景模板选择。完整版继续支持三类列表筛选、查看与维护。</p>'
     },
     'templates-list': {
-      feature:'<p>原型库内的模板配置管理生成过程配置，不包含图片或视频；AI素材（一期）仅开放节点模板。</p>',
-      data:'<p>记录可修改的模板名称、模板类型、适用节点、输出素材类型、各节点素材处理配置快照、创建人、状态、累计使用次数及最近使用时间，不保存输入图片、视频或生成结果。AI素材（一期）只查询并使用当前已开放节点的节点模板。</p>',
-      interaction:'<p>支持重命名并持久化保存；查看详情时按节点展示完整素材处理配置快照。使用模板后自动带入对应配置，每次成功套用需增加使用次数。AI素材（一期）关闭任务模板创建与套用入口，节点配置中的模板选择仅提供节点模板，各节点的场景模板选择入口关闭；完整版继续支持任务模板与节点模板。支持按模板名称、模板类型、适用节点、输出素材类型、创建人、部门和最近使用时间区间组合筛选或重置。未额外说明长度限制时，普通文本输入框最多输入并保存 200 个字符，大文本框最多输入并保存 1500 个字符；存在明确限制时以字段限定为准。</p>'
+      feature:'<p>原型库内的模板配置管理生成过程配置，不包含图片或视频；AI素材仅开放节点模板。</p>',
+      data:'<p>记录可修改的模板名称、模板类型、适用节点、输出素材类型、各节点素材处理配置快照、创建人、状态、累计使用次数及最近使用时间，不保存输入图片、视频或生成结果。AI素材只查询并使用当前已开放节点的节点模板。</p>',
+      interaction:'<p>支持重命名并持久化保存；查看详情时按节点展示完整素材处理配置快照。使用模板后自动带入对应配置，每次成功套用需增加使用次数。AI素材关闭任务模板创建与套用入口，节点配置中的模板选择仅提供节点模板，各节点的场景模板选择入口关闭；完整版继续支持任务模板与节点模板。支持按模板名称、模板类型、适用节点、输出素材类型、创建人、部门和最近使用时间区间组合筛选或重置。未额外说明长度限制时，普通文本输入框最多输入并保存 200 个字符，大文本框最多输入并保存 1500 个字符；存在明确限制时以字段限定为准。</p>'
     },
     'tasks-usage': {
       feature:'<p>在任务与消耗页面集中查看任务及节点的额度效率、浪费和 AI 调用情况。</p>',
@@ -958,7 +1071,7 @@
     },
     'usage-token-detail': {
       feature:'<p>按任务汇总消耗额度、浪费额度、节点数、AI 调用次数与任务状态，展开后追溯节点层明细。</p>',
-      data:'<ul><li>已额度消耗：筛选范围内已消耗总额度</li><li>平均单位有效额度：素材所在节点耗费总额度 ÷ 最终入库通过数量，分别计算图片和视频</li><li>浪费额度：未被选中入库素材对应的额度；失败和重试未形成有效入库素材的额度计入浪费</li><li>浪费额度占比：浪费额度 ÷ 已消耗总额度</li><li>平均每节点调用 AI 次数：AI 调用总次数 ÷ 总节点数</li><li>任务列表展示任务、部门/执行人、消耗额度、浪费额度、节点数、AI 调用次数、任务状态和最近执行时间；执行人展示平台用户名称，不展示邮箱或登录账号</li><li>节点列表展示节点、AI 模型、AI 调用次数、消耗额度、浪费额度、生成素材数、入库素材数和最近执行时间</li><li>任务详情按节点展示生成批次；每次点击生成均保存不可覆盖的配置快照、生成方式、基于版本、上传素材张数、产出类型及数量、入库数量和生成时间</li><li>同一节点存在多个生成批次时，通过 V1、V2 等批次 Tab 切换对应的独立配置快照和生成结果；默认定位最近一个有入库结果的批次，无入库素材时定位最近生成批次</li><li>批次配置采用“配置项：配置值”的文本叙事形式，并将上传素材张数纳入同一配置叙事模块</li></ul>',
+      data:'<ul><li>已额度消耗：筛选范围内已消耗总额度</li><li>有效入库素材数：最终确认入库的图片和视频数量，按素材 ID 去重，分别展示图片张数和视频个数</li><li>浪费额度：未被选中入库素材对应的额度；失败和重试未形成有效入库素材的额度计入浪费</li><li>浪费额度占比：浪费额度 ÷ 已消耗总额度</li><li>平均每节点调用 AI 次数：AI 调用总次数 ÷ 总节点数</li><li>任务列表展示任务、部门/执行人、消耗额度、浪费额度、节点数、AI 调用次数、任务状态和最近执行时间；执行人展示平台用户名称，不展示邮箱或登录账号</li><li>节点列表展示节点、AI 模型、AI 调用次数、消耗额度、浪费额度、生成素材数、入库素材数和最近执行时间</li><li>任务详情按节点展示生成批次；每次点击生成均保存不可覆盖的配置快照、生成方式、基于版本、上传素材张数、产出类型及数量、入库数量和生成时间</li><li>同一节点存在多个生成批次时，通过 V1、V2 等批次 Tab 切换对应的独立配置快照和生成结果；默认定位最近一个有入库结果的批次，无入库素材时定位最近生成批次</li><li>批次配置采用“配置项：配置值”的文本叙事形式，并将上传素材张数纳入同一配置叙事模块</li></ul>',
       interaction:'<p>支持按任务、部门、执行人和日期组合筛选，其中部门与执行人支持多选；执行人筛选与列表均使用系统账号映射后的平台用户名称，未选择时表示全部，选择多项时按任一匹配项过滤。指标卡与列表使用相同筛选结果。点击“额度明细”通过弹窗查看节点额度数据，点击“任务详情”通过弹窗查看节点素材处理内容。</p>'
     },
     'permissions-matrix': {
@@ -1052,6 +1165,7 @@
   let specDirty = false;
   let specPanelView = 'list';
   let pendingGlobalRuleRange = null;
+  let lastRichEditorRange = null;
   let pendingRichImageRange = null;
   let activeRichTableCell = null;
   const recoveredSpecTargets = new Map();
@@ -1140,7 +1254,7 @@
     if (!text) return 'item';
     return encodeURIComponent(text).replace(/%/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').slice(0,120) || 'item';
   }
-  function stableElementPath(element) {
+  function stableElementPath(element, disambiguateComponents = false) {
     const parts = [];
     let current = element;
     while (current && current !== document.body) {
@@ -1151,7 +1265,12 @@
       if (current.id) { parts.unshift(`#${safeKeyPart(current.id)}`); break; }
       const stableAttribute = ['editorRowKey','node','view','usage','id','index'].find(name => current.dataset?.[name]);
       if (stableAttribute) {
-        parts.unshift(`${current.tagName.toLowerCase()}[${stableAttribute}=${safeKeyPart(current.dataset[stableAttribute])}]`);
+        // 业务实体 ID 可能同时用于详情、状态、删除等操作；说明须区分同级组件。
+        const peers = disambiguateComponents && current.parentElement
+          ? [...current.parentElement.children].filter(item => item.tagName === current.tagName && item.dataset?.[stableAttribute] === current.dataset[stableAttribute])
+          : [];
+        const position = peers.length > 1 ? `:component-${peers.indexOf(current) + 1}` : '';
+        parts.unshift(`${current.tagName.toLowerCase()}[${stableAttribute}=${safeKeyPart(current.dataset[stableAttribute])}]${position}`);
       } else if (current.tagName === 'A' && current.getAttribute('href')) {
         parts.unshift(`a[href=${safeKeyPart(current.getAttribute('href'))}]`);
       } else {
@@ -1712,6 +1831,8 @@
     if (!inDetail) {
       renderPageDescription();
       editor.innerHTML = '';
+      delete editor.dataset.specTargetId;
+      lastRichEditorRange = null;
       activeRichTableCell = null;
       syncRichTableTools();
       empty.hidden = true;
@@ -1727,7 +1848,12 @@
     $('#specNameInput').placeholder = fallbackName;
     $('#specNameInput').readOnly = !canEdit;
     const value = unifiedSpecHtml(record);
-    editor.innerHTML = value;
+    // 同一说明仅刷新侧栏时保留编辑节点，避免规则选择弹窗使光标 Range 失效。
+    if (editor.dataset.specTargetId !== selectedSpecTarget.dataset.specId || sanitizeRichHtml(editor.innerHTML) !== value) {
+      editor.innerHTML = value;
+      lastRichEditorRange = null;
+    }
+    editor.dataset.specTargetId = selectedSpecTarget.dataset.specId;
     activeRichTableCell = null;
     syncRichTableTools();
     editor.dataset.placeholder = canEdit ? '输入功能目标、业务规则、字段口径或交互约束…' : '当前原型说明尚未记录内容';
@@ -1782,11 +1908,34 @@
     const type = specComponentTypeLabel(element);
     return text ? `${type} · ${text.slice(0, 42)}` : type;
   }
+  function specComponentPath(element) {
+    const path = stableElementPath(element, true);
+    const dialog = businessDialogRoot(element);
+    if (!dialog) return path;
+    // 带 ID 的子元素会提前结束路径；说明标识仍须包含所属业务弹窗。
+    const scope = `#${dialog.id}[dialog=${safeKeyPart(dialog.dataset.businessDialogKey || 'business-dialog')}]`;
+    return path.startsWith(scope) ? path : `${scope}>${path}`;
+  }
+  function clearDialogSpecTargets(dialog) {
+    // 通用弹窗会复用标题、关闭、取消和确认按钮，不能继承上次的组件绑定。
+    if (selectedSpecTarget && dialog.contains(selectedSpecTarget)) {
+      commitSpecEditor();
+      if (specDirty && persistSpecState('切换弹窗前保存说明')) specDirty = false;
+      selectedSpecTarget.classList.remove('spec-selected');
+      selectedSpecTarget = null;
+      specPanelView = 'list';
+      renderSpecEditor();
+    }
+    $$('[data-spec-auto="true"]', dialog).forEach(element => {
+      ['specId','specLabel','specAuto','specScope','specNumber'].forEach(key => delete element.dataset[key]);
+      element.classList.remove('spec-selected','has-spec-target','spec-target-deleted');
+    });
+  }
   function ensureSpecTargetIdentity(element, view) {
     if (!element || !view) return null;
     if (element.dataset.specId) return element;
     const page = view.contains(element) || isBusinessDialogElement(element) ? (view.dataset.page || 'page') : 'global';
-    const path = stableElementPath(element);
+    const path = specComponentPath(element);
     element.dataset.specId = `component-${safeKeyPart(page)}-${specComponentHash(path)}`;
     element.dataset.specLabel = specComponentLabel(element);
     element.dataset.specAuto = 'true';
@@ -1796,7 +1945,7 @@
   function restoreSavedSpecTargetIdentity(element, view) {
     if (!element || !view || element.dataset.specId) return element || null;
     const page = view.contains(element) || isBusinessDialogElement(element) ? (view.dataset.page || 'page') : 'global';
-    const path = stableElementPath(element);
+    const path = specComponentPath(element);
     const savedId = `component-${safeKeyPart(page)}-${specComponentHash(path)}`;
     if (!hasCreatedSpec(savedId)) return null;
     element.dataset.specId = savedId;
@@ -1913,6 +2062,7 @@
     record.interaction = '';
     record.name = name;
     editor.innerHTML = value;
+    lastRichEditorRange = null;
     $('#selectedSpecTarget').textContent = specDisplayName(selectedSpecTarget);
     selectedSpecTarget.classList.toggle('has-spec-target', hasSpec(selectedSpecTarget.dataset.specId));
     updateSpecSaveState();
@@ -1936,7 +2086,7 @@
     const target = specTargets.find(item => item.dataset.specId === targetId);
     if (!target) return;
     const label = specDisplayName(target);
-    openDialog('删除组件说明', label, '<div class="permission-note spec-delete-confirm" style="margin:0"><span>!</span><p>删除后，该组件的功能、数据与交互说明将同时移除。之后仍可重新点击业务组件创建说明。</p></div>', '确认删除', () => {
+    openPrototypeDialog('删除组件说明', label, '<div class="permission-note spec-delete-confirm" style="margin:0"><span>!</span><p>删除后，该组件的功能、数据与交互说明将同时移除。之后仍可重新点击业务组件创建说明。</p></div>', '确认删除', () => {
       delete specState[targetId];
       persistSpecState('删除说明');
       deletedSpecTargetIds.add(targetId);
@@ -1986,7 +2136,7 @@
   function openGlobalRulesList() {
     const canEdit = prototypeMode === 'spec';
     const body = `<div class="global-rule-manager dialog-wide-content"><div class="prototype-governance-note"><b>${canEdit ? '全局规则管理' : '全局规则查看'}</b><span>统一维护跨页面、跨组件复用的业务规则；规则可在单个原型说明中被引用。</span></div><div class="global-rule-list-toolbar"><label><span>规则编号</span><input id="globalRuleCodeSearch" placeholder="搜索规则编号"></label><label><span>规则名称</span><input id="globalRuleNameSearch" placeholder="搜索规则名称"></label>${canEdit ? '<button class="button primary" type="button" data-new-global-rule>＋ 新增规则</button>' : ''}</div><div class="global-rule-list" id="globalRuleListResults">${globalRuleListItemsMarkup()}</div></div>`;
-    openDialog(canEdit ? '编辑全局规则' : '查看全局规则', `${prototypeGovernanceState.globalRules.length} 条规则`, body, '关闭', closeDialog);
+    openPrototypeDialog(canEdit ? '编辑全局规则' : '查看全局规则', `${prototypeGovernanceState.globalRules.length} 条规则`, body, '关闭', closeDialog);
     const dialogBody = $('#dialogBody');
     const refresh = () => { $('#globalRuleListResults').innerHTML = globalRuleListItemsMarkup($('#globalRuleCodeSearch').value, $('#globalRuleNameSearch').value); };
     dialogBody.oninput = event => { if (event.target.matches('#globalRuleCodeSearch,#globalRuleNameSearch')) refresh(); };
@@ -2010,7 +2160,7 @@
     if (prototypeMode !== 'spec') return;
     const existing = globalRuleById(ruleId);
     const body = `<div class="global-rule-form dialog-wide-content"><button class="global-rule-back" type="button" data-back-global-rules>← 返回规则列表</button><div class="global-rule-form-grid"><label><span>规则编号 <em>*</em></span><input id="globalRuleCodeInput" maxlength="40" value="${escapeHtml(existing?.code || nextGlobalRuleCode())}" placeholder="例如 GR-001"></label><label><span>规则名称 <em>*</em></span><input id="globalRuleNameInput" maxlength="80" value="${escapeHtml(existing?.name || '')}" placeholder="输入规则名称"></label><div class="global-rule-rich-field wide"><span>规则说明</span><div class="rich-toolbar global-rule-rich-toolbar" id="globalRuleRichToolbar" aria-label="规则说明富文本工具栏"><select id="globalRuleRichBlock" aria-label="规则说明段落样式"><option value="p">正文</option><option value="h3">小标题</option><option value="blockquote">备注</option></select><button type="button" data-global-rich-command="bold" title="加粗"><b>B</b></button><button type="button" data-global-rich-command="italic" title="斜体"><i>I</i></button><button type="button" data-global-rich-command="underline" title="下划线"><u>U</u></button><button type="button" data-global-rich-command="insertUnorderedList" title="项目符号">• 列表</button><button type="button" data-global-rich-command="insertOrderedList" title="编号列表">1. 列表</button><button type="button" data-global-rich-command="createLink" title="插入链接">链接</button><button type="button" data-global-rich-command="insertHorizontalRule" title="插入横线">横线</button><button type="button" data-global-rich-table title="插入 2×2 表格">表格</button><button type="button" data-global-rich-image title="插入本地图片">图片</button><input id="globalRuleImageInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden></div><div class="rich-editor global-rule-rich-editor" id="globalRuleContentInput" contenteditable="true" role="textbox" aria-multiline="true" data-placeholder="输入规则适用范围、判断条件、数据口径或交互约束…">${globalRuleRichHtml(existing)}</div></div></div></div>`;
-    openDialog(existing ? '修改全局规则' : '新增全局规则', existing ? `${existing.code} · ${existing.name}` : '创建规则编号并为规则命名', body, '保存规则', () => {
+    openPrototypeDialog(existing ? '修改全局规则' : '新增全局规则', existing ? `${existing.code} · ${existing.name}` : '创建规则编号并为规则命名', body, '保存规则', () => {
       const code = $('#globalRuleCodeInput').value.trim().slice(0, 40);
       const name = $('#globalRuleNameInput').value.trim().slice(0, 80);
       const content = sanitizeRichHtml($('#globalRuleContentInput').innerHTML).trim();
@@ -2097,7 +2247,7 @@
     const canEdit = prototypeMode === 'spec';
     const backLabel = returnTarget === 'spec' ? '返回原型说明' : '返回规则列表';
     const body = `<div class="global-rule-detail dialog-wide-content"><div class="global-rule-detail-nav"><button class="global-rule-back" type="button" data-back-global-rule-detail>← ${backLabel}</button>${canEdit ? `<div><button class="button secondary" type="button" data-edit-global-rule="${escapeHtml(rule.id)}">修改规则</button><button class="button danger" type="button" data-delete-global-rule="${escapeHtml(rule.id)}">删除规则</button></div>` : ''}</div><section><div class="global-rule-detail-identity"><span>${escapeHtml(rule.code)}</span><h3>${escapeHtml(rule.name)}</h3></div><dl><div><dt>规则编号</dt><dd>${escapeHtml(rule.code)}</dd></div><div><dt>规则名称</dt><dd>${escapeHtml(rule.name)}</dd></div><div class="wide"><dt>规则说明</dt><dd class="global-rule-content rich-editor global-rule-rich-readonly">${globalRuleRichHtml(rule) || '<p>暂未填写规则说明</p>'}</dd></div></dl></section></div>`;
-    openDialog('全局规则详情', `${rule.code} · ${rule.name}`, body, returnTarget === 'spec' ? '返回原型说明' : '关闭', returnTarget === 'spec' ? closeDialog : closeDialog);
+    openPrototypeDialog('全局规则详情', `${rule.code} · ${rule.name}`, body, returnTarget === 'spec' ? '返回原型说明' : '关闭', returnTarget === 'spec' ? closeDialog : closeDialog);
     $('#dialogBody').onclick = event => {
       if (event.target.closest('[data-back-global-rule-detail]')) { if (returnTarget === 'spec') closeDialog(); else openGlobalRulesList(); return; }
       const edit = event.target.closest('[data-edit-global-rule]');
@@ -2109,7 +2259,7 @@
   function requestDeleteGlobalRule(ruleId, returnTarget) {
     const rule = globalRuleById(ruleId);
     if (!rule || prototypeMode !== 'spec') return;
-    openDialog('删除全局规则', `${rule.code} · ${rule.name}`, '<div class="permission-note spec-delete-confirm" style="margin:0"><span>!</span><p>删除后，已插入原型说明中的规则引用仍会保留，但点击时会提示该规则已不存在。</p></div>', '确认删除', () => {
+    openPrototypeDialog('删除全局规则', `${rule.code} · ${rule.name}`, '<div class="permission-note spec-delete-confirm" style="margin:0"><span>!</span><p>删除后，已插入原型说明中的规则引用仍会保留，但点击时会提示该规则已不存在。</p></div>', '确认删除', () => {
       prototypeGovernanceState.globalRules = prototypeGovernanceState.globalRules.filter(item => item.id !== ruleId);
       persistPrototypeGovernanceState();
       toast('全局规则已删除', 'info');
@@ -2122,13 +2272,13 @@
     const value = String(prototypeGovernanceState.requirementAdjustments || '');
     const body = `<div class="prototype-governance-dialog"><div class="prototype-governance-note"><b>${canEdit ? '编辑模式' : '技术查看模式'}</b><span>记录需求变更、调整原因及影响范围，便于研发追溯。</span></div><label><span>需求调整记录</span><textarea id="prototypeGovernanceEditor" maxlength="12000" rows="14" ${canEdit ? '' : 'readonly'} placeholder="当前尚未填写需求调整记录">${escapeHtml(value)}</textarea></label></div>`;
     if (canEdit) {
-      openDialog('编辑需求调整记录', '原型协作资料', body, '保存', () => {
+      openPrototypeDialog('编辑需求调整记录', '原型协作资料', body, '保存', () => {
         prototypeGovernanceState.requirementAdjustments = $('#prototypeGovernanceEditor').value.trim().slice(0,12000);
         if (!persistPrototypeGovernanceState()) { toast('需求调整记录保存失败，请检查浏览器存储空间', 'warning'); return; }
         closeDialog();
         toast('需求调整记录已保存');
       });
-    } else openDialog('查看需求调整记录', '技术查看 · 只读', body, '关闭', closeDialog);
+    } else openPrototypeDialog('查看需求调整记录', '技术查看 · 只读', body, '关闭', closeDialog);
   }
   function globalRuleReferenceItemsMarkup(query = '') {
     const needle = String(query).trim().toLowerCase();
@@ -2138,10 +2288,9 @@
   }
   function openGlobalRuleReferencePicker() {
     if (prototypeMode !== 'spec' || !selectedSpecTarget) return;
-    const selection = window.getSelection();
-    pendingGlobalRuleRange = selection?.rangeCount && $('#specRichEditor').contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
+    pendingGlobalRuleRange = captureRichEditorRange() || (lastRichEditorRange && $('#specRichEditor').contains(lastRichEditorRange.commonAncestorContainer) ? lastRichEditorRange.cloneRange() : null);
     const body = `<div class="global-rule-reference-picker"><label><span>搜索规则</span><input id="globalRuleReferenceSearch" placeholder="输入规则编号或规则名称"></label><div id="globalRuleReferenceResults">${globalRuleReferenceItemsMarkup()}</div></div>`;
-    openDialog('引入全局规则', '将规则编号与名称插入当前原型说明', body, '取消', closeDialog);
+    openPrototypeDialog('引入全局规则', '将规则编号与名称插入当前原型说明', body, '取消', closeDialog);
     $('#dialogBody').oninput = event => { if (event.target.matches('#globalRuleReferenceSearch')) $('#globalRuleReferenceResults').innerHTML = globalRuleReferenceItemsMarkup(event.target.value); };
     $('#dialogBody').onclick = event => {
       const button = event.target.closest('[data-insert-global-rule]');
@@ -2170,7 +2319,10 @@
   }
   function captureRichEditorRange() {
     const selection = window.getSelection();
-    return selection?.rangeCount && $('#specRichEditor').contains(selection.anchorNode) ? selection.getRangeAt(0).cloneRange() : null;
+    if (!selection?.rangeCount) return null;
+    const range = selection.getRangeAt(0);
+    const editor = $('#specRichEditor');
+    return editor.contains(range.startContainer) && editor.contains(range.endContainer) ? range.cloneRange() : null;
   }
   function insertRichMarkup(markup, savedRange = null) {
     const editor = $('#specRichEditor');
@@ -2313,7 +2465,7 @@
     syncBusinessDialogHorizontalScroll();
   }
   function setPrototypeMode(mode) {
-    if (!['copy','spec','experience','compare'].includes(mode)) mode = 'experience';
+    if (!['experience','compare'].includes(mode)) mode = 'experience';
     if (designMode && mode !== 'copy') {
       commitSelectedEditableValue();
       mirrorEditablePersistenceAliases();
@@ -2448,7 +2600,7 @@
     }
   }
   function resetDesign() {
-    openDialog('恢复默认页面设计','将清除当前浏览器保存的文字、下拉选项、颜色、密度、圆角和模块显示调整。','<div class="permission-note" style="margin:0"><span>i</span><p>任务、素材、模板和额度数据不会受到影响。</p></div>','确认恢复',() => {
+    openPrototypeDialog('恢复默认页面设计','将清除当前浏览器保存的文字、下拉选项、颜色、密度、圆角和模块显示调整。','<div class="permission-note" style="margin:0"><span>i</span><p>任务、素材、模板和额度数据不会受到影响。</p></div>','确认恢复',() => {
       archiveDesignSnapshot(designState, '恢复默认前自动备份');
       restoreDefaultSelectStates();
       designState = JSON.parse(JSON.stringify(defaultDesignState));
@@ -2655,6 +2807,21 @@
     demandView?.classList.toggle('phase1-feature-unavailable', demandUnavailable);
     if ($('#phase1DemandUnavailable')) $('#phase1DemandUnavailable').hidden = !demandUnavailable;
     $('#breadcrumb').textContent = viewNames[activeView];
+    const isDepartmentView = activeView === 'departments';
+    const isUserView = activeView === 'users';
+    const isMenuView = activeView === 'menus';
+    const isManagementView = isDepartmentView || isUserView || isMenuView;
+    const managementHash = isMenuView ? '#/permission/menu' : isUserView ? '#/permission/user' : '#/permission/department';
+    document.title = `BI-Dashboard - ${isManagementView ? viewNames[activeView] : aiEditionLabel()}`;
+    if (isManagementView && location.hash !== managementHash) history.replaceState(null,'',`${location.pathname}${location.search}${managementHash}`);
+    else if (!isManagementView && ['#/permission/department','#/permission/user','#/permission/menu'].includes(location.hash)) history.replaceState(null,'',`${location.pathname}${location.search}`);
+    $('#breadcrumbModule').textContent = isManagementView ? '权限管理' : aiEditionLabel();
+    $('#activeAiTab').textContent = isManagementView ? `♙ ${viewNames[activeView]}` : `✦ ${aiEditionLabel()}`;
+    $('#openDepartmentManagement').classList.toggle('active', isDepartmentView);
+    $('#openUserManagement').classList.toggle('active', isUserView);
+    $('#openMenuManagement').classList.toggle('active', isMenuView);
+    $('#togglePermissionManagement').classList.toggle('active-parent', isManagementView);
+    $$('.ai-nav-toggle').forEach(button => button.classList.toggle('active-parent', !isManagementView && button.closest('[data-ai-edition]')?.dataset.aiEdition === activeAiEdition));
     scrollBusinessCanvasTop();
     if (activeView === 'workbench') renderWorkbench();
     if (activeView === 'demands' && !demandUnavailable) renderVisualDemands();
@@ -2664,6 +2831,9 @@
     }
     if (activeView === 'tasks') setTaskRecordTab(requestedTaskTab || activeTaskRecordTab);
     if (activeView === 'assets') renderAssets($('#assetSearch').value.trim());
+    if (isDepartmentView) departmentManager?.render();
+    if (isUserView) userManager?.render();
+    if (isMenuView) menuManager?.render();
     if (activeView === 'workspace') updateVisualDemandSourceBanner();
     if (designMode) $('#editorPageSelect').value = activeView;
     refreshEditableElements();
@@ -2675,9 +2845,12 @@
       refreshSpecTargets();
     }
   }
+  function aiEditionLabel(edition = activeAiEdition) {
+    return edition === 'phase1' ? 'AI素材' : 'AI素材（参考）';
+  }
   function setAiEdition(edition) {
     activeAiEdition = edition === 'phase1' ? 'phase1' : 'full';
-    const label = activeAiEdition === 'phase1' ? 'AI素材（一期）' : 'AI素材';
+    const label = aiEditionLabel();
     document.body.classList.toggle('ai-edition-phase1', activeAiEdition === 'phase1');
     $('#breadcrumbModule').textContent = label;
     $('#activeAiTab').textContent = `✦ ${label}`;
@@ -2689,7 +2862,7 @@
     if (taskTemplateEntry) {
       const unavailable = activeAiEdition === 'phase1';
       taskTemplateEntry.disabled = unavailable;
-      if (unavailable) taskTemplateEntry.title = 'AI素材（一期）暂不支持任务模板';
+      if (unavailable) taskTemplateEntry.title = 'AI素材暂不支持任务模板';
       else taskTemplateEntry.removeAttribute('title');
     }
     if (activeAiEdition === 'phase1') libraryMultiFilterState['template.kind']?.clear();
@@ -4244,8 +4417,11 @@
     return owner.producer === currentUserContext.name || (currentUserContext.assetVisibility === 'department' && owner.producerDepartment === currentUserContext.org);
   }
   function permittedAssets() { return assets.filter(assetVisibleToCurrentUser); }
-  function assetGeneratedDate(row) {
-    const match = String(row?.[7] || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
+  function assetStoredAt(row) {
+    return String(row?.[8]?.storedAt || row?.[8]?.completedAt || row?.[7] || '');
+  }
+  function assetStoredDate(row) {
+    const match = assetStoredAt(row).match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:\s+(\d{1,2}):(\d{2}))?/);
     if (!match) return null;
     const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), Number(match[4] || 0), Number(match[5] || 0));
     return date.getFullYear() === Number(match[1]) && date.getMonth() === Number(match[2]) - 1 && date.getDate() === Number(match[3]) ? date : null;
@@ -4260,11 +4436,14 @@
     return result;
   }
   function assetExpiryDate(row) {
-    const generated = assetGeneratedDate(row);
-    if (!generated) return null;
-    const expiry = new Date(generated);
-    expiry.setFullYear(expiry.getFullYear() + 1);
-    return expiry;
+    const stored = assetStoredDate(row);
+    return stored ? shiftCalendarMonth(stored, 12) : null;
+  }
+  function assetExpiryText(row) {
+    const expiry = assetExpiryDate(row);
+    if (!expiry) return '未记录';
+    const pad = value => String(value).padStart(2, '0');
+    return `${expiry.getFullYear()}-${pad(expiry.getMonth() + 1)}-${pad(expiry.getDate())} ${pad(expiry.getHours())}:${pad(expiry.getMinutes())}`;
   }
   function assetStatus(row, now = new Date()) {
     const expiry = assetExpiryDate(row);
@@ -4405,7 +4584,7 @@
       const rowStatus = expired ? '已过期' : '正常';
       const ownerDepartment = assetProducerParts(row).producerDepartment || '未记录部门';
       const naming = buildAssetNaming(row);
-      return `<tr data-editor-row-key="${escapeHtml(row[1])}" class="${selectedAssetIds.has(row[1]) ? 'is-selected' : ''}"><td class="asset-select-column"><input class="asset-select" type="checkbox" value="${escapeHtml(row[1])}" aria-label="选择素材 ${escapeHtml(row[1])}" ${selectedAssetIds.has(row[1]) ? 'checked' : ''} ${expired ? 'disabled title="素材已过期，无法下载"' : ''}></td><td><div class="asset-identity"><div class="asset-identity-preview">${assetThumbnailMarkup(row)}<small class="asset-id-caption">${escapeHtml(row[1])}</small></div></div></td><td class="asset-naming-cell"><b title="${escapeHtml(naming || '待补全素材信息后生成')}">${escapeHtml(naming || '待补全素材信息后生成')}</b></td><td class="asset-tags-cell">${assetTagMarkup(row)}</td><td><div class="asset-producer-cell" data-runtime-copy><b>${escapeHtml(assetProducerName(row) || '未填写')}</b><small>${escapeHtml(ownerDepartment)}</small></div></td><td><span class="status ${assetStatusClass(rowStatus)}">${rowStatus}</span></td><td>${escapeHtml(row[7])}</td><td class="asset-row-actions"><button class="table-link asset-info-edit" data-id="${escapeHtml(row[1])}">编辑信息</button><button class="table-link asset-tag-edit" data-id="${escapeHtml(row[1])}">调整标签</button><button class="table-link asset-detail" data-id="${escapeHtml(row[1])}">详情</button></td></tr>`;
+      return `<tr data-editor-row-key="${escapeHtml(row[1])}" class="${selectedAssetIds.has(row[1]) ? 'is-selected' : ''}"><td class="asset-select-column"><input class="asset-select" type="checkbox" value="${escapeHtml(row[1])}" aria-label="选择素材 ${escapeHtml(row[1])}" ${selectedAssetIds.has(row[1]) ? 'checked' : ''} ${expired ? 'disabled title="素材已过期，无法下载"' : ''}></td><td><div class="asset-identity"><div class="asset-identity-preview">${assetThumbnailMarkup(row)}<small class="asset-id-caption">${escapeHtml(row[1])}</small></div></div></td><td class="asset-naming-cell"><b title="${escapeHtml(naming || '待补全素材信息后生成')}">${escapeHtml(naming || '待补全素材信息后生成')}</b></td><td class="asset-tags-cell">${assetTagMarkup(row)}</td><td><div class="asset-producer-cell" data-runtime-copy><b>${escapeHtml(assetProducerName(row) || '未填写')}</b><small>${escapeHtml(ownerDepartment)}</small></div></td><td><span class="status ${assetStatusClass(rowStatus)}">${rowStatus}</span></td><td class="asset-storage-time-cell" data-runtime-copy><b>${escapeHtml(assetStoredAt(row) || '未记录')}</b><small>过期清理时间：${escapeHtml(assetExpiryText(row))}</small></td><td class="asset-row-actions"><button class="table-link asset-info-edit" data-id="${escapeHtml(row[1])}">编辑信息</button><button class="table-link asset-tag-edit" data-id="${escapeHtml(row[1])}">调整标签</button><button class="table-link asset-detail" data-id="${escapeHtml(row[1])}">详情</button></td></tr>`;
     }).join('') : '<tr><td colspan="8" class="empty-cell">未找到匹配素材</td></tr>';
     $('.pagination span', $('#assetRows').closest('.list-panel')).textContent = `共 ${list.length} 条`;
     syncAssetSelectionControls(list);
@@ -4551,7 +4730,6 @@
   function assetDetailBody(row) {
     const metadata = row[8] || {};
     const naming = buildAssetNaming(row);
-    const expiry = assetExpiryDate(row);
     const { sourceTask, sourceNode } = assetSourceParts(row);
     const demand = visualDemands.find(item => item.id === metadata.visualDemandId);
     const task = tasks.find(item => item[7]?.id === metadata.taskId);
@@ -4561,8 +4739,8 @@
     return `<div class="detail-layout asset-detail-layout dialog-wide-content">
       <div class="detail-hero">${assetThumbnailMarkup(row)}<div><h3>${escapeHtml(row[1])}</h3></div><span class="status ${assetStatusClass(assetStatus(row))}">${assetStatus(row)}</span></div>
       <section class="detail-section"><h3 class="detail-section-title">基本信息</h3><div class="detail-fields">
-        <div class="detail-field"><span>素材格式</span><b>${escapeHtml(row[2])}</b></div><div class="detail-field"><span>生成时间</span><b>${escapeHtml(row[7] || '未记录')}</b></div>
-        <div class="detail-field"><span>规格 / 画质</span><b>${escapeHtml(row[4] || '未记录')} · ${escapeHtml(metadata.quality || '自动适配')}</b></div><div class="detail-field"><span>清理时间</span><b>${expiry ? escapeHtml(expiry.toLocaleDateString('zh-CN')) : '未记录'}</b></div>
+        <div class="detail-field"><span>素材格式</span><b>${escapeHtml(row[2])}</b></div><div class="detail-field"><span data-editor-record-key="asset-stored-at-detail-label-v1">入库时间</span><b data-runtime-copy>${escapeHtml(assetStoredAt(row) || '未记录')}</b></div>
+        <div class="detail-field"><span>规格 / 画质</span><b>${escapeHtml(row[4] || '未记录')} · ${escapeHtml(metadata.quality || '自动适配')}</b></div><div class="detail-field"><span data-editor-record-key="asset-expiry-detail-label-v1">过期清理时间</span><b data-runtime-copy>${escapeHtml(assetExpiryText(row))}</b></div>
       </div></section>
       <section class="detail-section"><h3 class="detail-section-title">来源信息</h3><div class="detail-fields">
         <div class="detail-field"><span>来源需求 / 需求 ID</span><b class="detail-stacked-value">${escapeHtml(demandLabel)}<small>${escapeHtml(metadata.visualDemandId || '无需求 ID')}</small></b></div>
@@ -4798,7 +4976,7 @@
     $('#templateRows').innerHTML = list.length ? list.map(item => {
       const applicableNodes = item.scope === 'node' ? [item.nodeKey] : (item.nodes || []);
       const applicableNodeNames = applicableNodes.map(key => nodeMap[key]?.name || key).join(' → ');
-      return `<tr data-editor-row-key="TPL-${item.id}"><td><b>${escapeHtml(item.name)}</b><small>TPL-${String(item.id).padStart(4,'0')}</small></td><td><span class="scope-badge ${item.scope}">${item.scope === 'node' ? '节点模板' : '任务模板'}</span></td><td>${escapeHtml(applicableNodeNames)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.creator)}</td><td><b>${item.uses}</b></td><td>${item.last}</td><td><span class="status ${item.status === '启用' ? 'success' : 'info'}">${item.status}</span></td><td><button class="table-link use-template" data-id="${item.id}">使用</button><button class="table-link template-detail" data-id="${item.id}">详情</button><button class="table-link template-rename" data-id="${item.id}">重命名</button></td></tr>`;
+      return `<tr data-editor-row-key="TPL-${item.id}"><td><b>${escapeHtml(item.name)}</b><small>TPL-${String(item.id).padStart(4,'0')}</small></td><td><span class="scope-badge ${item.scope}">${item.scope === 'node' ? '节点模板' : '任务模板'}</span></td><td>${escapeHtml(applicableNodeNames)}</td><td>${escapeHtml(item.type)}</td><td>${escapeHtml(item.creator)}</td><td><b>${item.uses}</b></td><td>${item.last}</td><td><span class="status ${item.status === '启用' ? 'success' : 'info'}">${item.status}</span></td><td>${item.scope === 'node' ? '' : `<button class="table-link use-template" data-id="${item.id}">使用</button>`}<button class="table-link template-detail" data-id="${item.id}">详情</button><button class="table-link template-rename" data-id="${item.id}">重命名</button></td></tr>`;
     }).join('') : `<tr><td colspan="9" class="empty-cell">${hasActiveTimeFilter('templates') ? '所选时间区间内未找到匹配模板' : '未找到匹配模板'}</td></tr>`;
     renderPrototypeCounts();
   }
@@ -4897,7 +5075,41 @@
   function templateDetailBody(item) {
     const nodes = item.scope === 'node' ? [item.nodeKey] : (item.nodes || []);
     const route = nodes.map(key => nodeMap[key]?.name || key).join(' → ');
-    return `<div class="template-detail dialog-wide-content"><section class="detail-section"><h3 class="detail-section-title">模板信息</h3><div class="detail-fields"><div class="detail-field"><span>模板类型</span><b>${item.scope === 'node' ? '节点模板' : '任务模板'}</b></div><div class="detail-field"><span>输出类型</span><b>${escapeHtml(item.type)}</b></div><div class="detail-field detail-field-wide"><span>适用流程</span><b>${escapeHtml(route || '未配置')}</b></div><div class="detail-field"><span>使用次数</span><b>${Math.max(0, Number(item.uses) || 0).toLocaleString('zh-CN')}</b></div><div class="detail-field"><span>状态</span><b>${escapeHtml(item.status)}</b></div><div class="detail-field detail-field-wide"><span>内容范围</span><b>模板内容仅包含各节点的素材处理配置，不包含输入图片、视频或生成结果。</b></div></div></section><div class="template-config-detail">${nodes.map((nodeKey,index) => templateNodeConfigMarkup(item,nodeKey,index)).join('')}</div></div>`;
+    const enabled = item.status === '启用';
+    const statusControl = item.scope === 'node'
+      ? `<div class="node-template-management"><button type="button" class="node-template-status-switch" role="switch" aria-label="启用节点模板" aria-checked="${enabled}" data-template-status-toggle="${item.id}"><span class="node-template-switch-track" aria-hidden="true"></span><span data-runtime-copy>${enabled ? '启用' : '停用'}</span></button>${enabled ? '' : `<button type="button" class="button node-template-delete" data-template-delete="${item.id}">删除模板</button>`}</div>`
+      : `<b>${escapeHtml(item.status)}</b>`;
+    return `<div class="template-detail dialog-wide-content"><section class="detail-section"><h3 class="detail-section-title">模板信息</h3><div class="detail-fields"><div class="detail-field"><span>模板类型</span><b>${item.scope === 'node' ? '节点模板' : '任务模板'}</b></div><div class="detail-field"><span>输出类型</span><b>${escapeHtml(item.type)}</b></div><div class="detail-field detail-field-wide"><span>适用流程</span><b>${escapeHtml(route || '未配置')}</b></div><div class="detail-field"><span>使用次数</span><b>${Math.max(0, Number(item.uses) || 0).toLocaleString('zh-CN')}</b></div><div class="detail-field${item.scope === 'node' ? ' detail-field-wide' : ''}"><span>状态</span>${statusControl}</div><div class="detail-field detail-field-wide"><span>内容范围</span><b>模板内容仅包含各节点的素材处理配置，不包含输入图片、视频或生成结果。</b></div></div></section><div class="template-config-detail">${nodes.map((nodeKey,index) => templateNodeConfigMarkup(item,nodeKey,index)).join('')}</div></div>`;
+  }
+  function openTemplateDetail(item) {
+    const isNodeTemplate = item.scope === 'node';
+    openDialog('模板详情',item.name,templateDetailBody(item),isNodeTemplate ? '' : '使用模板',isNodeTemplate ? null : () => { closeDialog(); useTemplate(item.id); });
+    if (isNodeTemplate) {
+      $('.dialog-cancel').hidden = true;
+      $('.dialog-foot').hidden = true;
+    }
+  }
+  function toggleNodeTemplateStatus(id) {
+    const item = templates.find(template => template.id === Number(id) && template.scope === 'node');
+    if (!item) return;
+    item.status = item.status === '启用' ? '停用' : '启用';
+    persistTemplates();
+    renderTemplates($('#templateSearch').value.trim());
+    openTemplateDetail(item);
+    toast(`节点模板已${item.status}`);
+  }
+  function deleteNodeTemplate(id) {
+    const item = templates.find(template => template.id === Number(id) && template.scope === 'node');
+    if (!item || item.status !== '停用') { toast('请先停用节点模板再删除', 'warning'); return; }
+    openDialog('删除节点模板',item.name,`<p>确认删除节点模板「${escapeHtml(item.name)}」？</p><p>只删除该模板，来源任务、节点版本和已生成素材均会保留。</p>`,'删除模板',() => {
+      const current = templates.find(template => template.id === item.id && template.scope === 'node');
+      if (!current || current.status !== '停用') { toast('请先停用节点模板再删除', 'warning'); return; }
+      templates = templates.filter(template => template.id !== current.id);
+      persistTemplates();
+      closeDialog();
+      renderTemplates($('#templateSearch').value.trim());
+      toast('节点模板已删除，来源任务已保留');
+    });
   }
   function renameTemplate(item) {
     openDialog('修改模板名称',`TPL-${String(item.id).padStart(4,'0')}`,`<label class="field template-rename-field"><span>模板名称 <em>*</em></span><input id="renameTemplateName" maxlength="40" value="${escapeHtml(item.name)}"><small>名称最长 40 个字符</small></label>`,'保存名称',() => {
@@ -4950,27 +5162,29 @@
   function modelPrototypeImage(item, index = 0) {
     return item.image || modelDemoImages[index % modelDemoImages.length];
   }
-  function matchesModelPrototypeFilters(item) {
+  function matchesModelPrototypeFilters(item, filterState = libraryMultiFilterState) {
     const config = item.config || {};
     return Object.entries(modelFilterControls).every(([field, filterKey]) => {
-      const selected = libraryMultiFilterState[filterKey];
+      const selected = filterState[filterKey];
       return !selected.size || selected.has(String(config[field] || ''));
     });
   }
-  function modelPrototypeCard(item, index) {
+  function modelPrototypeCard(item, index, pickerOptions = null) {
     const config = item.config || {};
     const image = modelPrototypeImage(item, index);
     const disabled = item.status === '停用';
     const uses = Math.max(0, Number(item.uses) || 0);
+    const isPicker = Boolean(pickerOptions?.inputName);
+    const cardTag = isPicker ? 'label' : 'article';
     const tags = ['region','gender','ageRange','style','skinTone','hairColor']
       .map(field => {
         const label = modelConfigFields.find(([key]) => key === field)?.[1] || field;
         const value = config[field] || '未配置';
         return `<span title="${escapeHtml(`${label}：${value}`)}">${escapeHtml(value)}</span>`;
       }).join('');
-    return `<article class="model-prototype-card ${disabled ? 'is-disabled' : ''}" data-editor-row-key="${escapeHtml(item.id)}">
+    return `<${cardTag} class="model-prototype-card ${disabled ? 'is-disabled' : ''} ${isPicker ? 'model-picker-card' : ''}" data-editor-row-key="${escapeHtml(item.id)}">
       <div class="model-card-main">
-        <div class="model-card-media media-preview-trigger" data-media-preview data-preview-type="image" data-preview-src="${escapeHtml(image)}" data-preview-name="${escapeHtml(modelPrototypeTitle(item))}" data-preview-source="模特原型" role="button" tabindex="0" aria-label="放大预览：${escapeHtml(modelPrototypeTitle(item))}">
+        <div class="model-card-media ${isPicker ? '' : 'media-preview-trigger'}" ${isPicker ? '' : `data-media-preview data-preview-type="image" data-preview-src="${escapeHtml(image)}" data-preview-name="${escapeHtml(modelPrototypeTitle(item))}" data-preview-source="模特原型" role="button" tabindex="0" aria-label="放大预览：${escapeHtml(modelPrototypeTitle(item))}"`}>
           <span aria-hidden="true">人像</span><img src="${escapeHtml(image)}" alt="${escapeHtml(modelPrototypeTitle(item))}" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true">
         </div>
         <div class="model-card-content">
@@ -4980,12 +5194,12 @@
           <div class="model-card-usage"><span>使用次数</span><b>${uses.toLocaleString('zh-CN')} 次</b></div>
         </div>
       </div>
-      <div class="model-card-actions">
+      ${isPicker ? `<div class="model-card-picker-action"><input type="${pickerOptions.inputType}" name="${pickerOptions.inputName}" value="${escapeHtml(item.id)}" aria-label="选择模特 ${escapeHtml(item.id)}" ${pickerOptions.checked ? 'checked' : ''}><span>选择此模特</span><small>${escapeHtml(item.id)}</small></div>` : `<div class="model-card-actions">
         <button class="model-card-action prototype-detail" type="button" data-id="${escapeHtml(item.id)}">查看详情</button>
         <button class="model-card-action prototype-status-toggle" type="button" data-id="${escapeHtml(item.id)}">${disabled ? '启用' : '停用'}</button>
         ${disabled ? `<button class="model-card-action danger prototype-delete" type="button" data-id="${escapeHtml(item.id)}">删除</button>` : ''}
-      </div>
-    </article>`;
+      </div>`}
+    </${cardTag}>`;
   }
   const sceneConfigFields = [
     ['shotComposition','景别构图'],
@@ -5091,7 +5305,19 @@
       : uniqueOutputCount(storedOutputs);
     const mediaTypes = [...new Set(storedOutputs.map(item => item.type).filter(Boolean))];
     const taskMediaType = taskRow?.[1] === '视频' ? '视频' : taskRow?.[1] === '图片' ? '图片' : records.some(item => item.mediaType === '视频') ? '视频' : '图片';
-    return { generated:Math.max(generated, stored), stored, mediaType:mediaTypes.includes('视频') ? '视频' : mediaTypes.includes('图片') ? '图片' : taskMediaType };
+    const mediaType = mediaTypes.includes('视频') ? '视频' : mediaTypes.includes('图片') ? '图片' : taskMediaType;
+    const storedByMedia = { 图片:0, 视频:0 };
+    const storedIds = new Set();
+    storedOutputs.forEach((output,index) => {
+      const identity = output.assetId || `${output.nodeKey}-${output.name || 'output'}-${output.time || index}`;
+      if (storedIds.has(identity)) return;
+      storedIds.add(identity);
+      const type = ['图片','视频'].includes(output.type) ? output.type : mediaType;
+      storedByMedia[type] += 1;
+    });
+    // 历史节点没有逐项入库记录时，沿用已保存的入库数量和输出类型。
+    if (!storedIds.size) storedByMedia[mediaType] = stored;
+    return { generated:Math.max(generated, stored), stored, mediaType, storedByMedia };
   }
   function nodeWasteQuota(records, generated, stored) {
     const total = records.reduce((sum, item) => sum + (Number(item.total) || 0), 0);
@@ -5155,7 +5381,8 @@
     const count = batch.outputBreakdown || {};
     return `图片 ${Math.max(0, Number(count.image) || 0)} 张 · 视频 ${Math.max(0, Number(count.video) || 0)} 个 · 模特原型 ${Math.max(0, Number(count.model) || 0)} 个 · 场景模板 ${Math.max(0, Number(count.scene) || 0)} 个`;
   }
-  function taskGenerationBatchesMarkup(nodeKey, batches, activeAttempt) {
+  const taskNodeTemplateSnapshots = new Map();
+  function taskGenerationBatchesMarkup(nodeKey, batches, activeAttempt, taskGroup) {
     if (!batches.length) return '<div class="task-material-config-empty">历史素材处理配置未记录</div>';
     const matchedIndex = batches.findIndex(batch => Number(batch.attempt) === Number(activeAttempt));
     const activeIndex = matchedIndex >= 0 ? matchedIndex : batches.length - 1;
@@ -5168,12 +5395,16 @@
       const attempt = Math.max(1, Number(batch.attempt) || index + 1);
       const isActive = index === activeIndex;
       const storedCount = Math.max(0, Number(batch.storedCount) || 0);
-      const singleBatchHead = batches.length === 1 ? `<h4 class="detail-section-title">V${attempt}</h4>` : '';
-      return `<section class="task-generation-panel detail-section${isActive ? ' active' : ''}" role="tabpanel" data-batch-panel="${attempt}"${isActive ? '' : ' hidden'}>${singleBatchHead}<div class="detail-fields"><div class="detail-field detail-field-wide"><span>生成结果</span><b>${escapeHtml(generationBatchOutputText(batch))}</b></div><div class="detail-field"><span>入库结果</span><b>${storedCount} 份</b></div><div class="detail-field"><span>生成时间</span><b>${escapeHtml(batch.time || '—')}</b></div></div>${taskMaterialConfigNarrativeMarkup(nodeKey, batch.config || {}, batch.uploadCount)}</section>`;
+      const snapshotKey = `${nodeKey}:${index}`;
+      const hasConfig = Boolean(nodeMap[nodeKey] && batch.config && Object.keys(batch.config).length);
+      if (hasConfig) taskNodeTemplateSnapshots.set(snapshotKey, { nodeKey, attempt, taskId:taskGroup.taskId, taskName:taskGroup.task, config:JSON.parse(JSON.stringify(batch.config)) });
+      const versionActions = `<div class="task-generation-version-actions"><h4 class="detail-section-title" data-runtime-copy>V${attempt}</h4><button type="button" class="button secondary save-node-version-template" data-node-version-template="${escapeHtml(snapshotKey)}"${hasConfig ? '' : ' disabled title="历史记录未保存配置，无法创建模板"'}>保存为节点模板</button></div>`;
+      return `<section class="task-generation-panel detail-section${isActive ? ' active' : ''}" role="tabpanel" data-batch-panel="${attempt}"${isActive ? '' : ' hidden'}>${versionActions}<div class="detail-fields"><div class="detail-field detail-field-wide"><span>生成结果</span><b>${escapeHtml(generationBatchOutputText(batch))}</b></div><div class="detail-field"><span>入库结果</span><b>${storedCount} 份</b></div><div class="detail-field"><span>生成时间</span><b>${escapeHtml(batch.time || '—')}</b></div></div>${taskMaterialConfigNarrativeMarkup(nodeKey, batch.config || {}, batch.uploadCount)}</section>`;
     }).join('');
     return `<div data-batch-group="${escapeHtml(nodeKey)}">${tabs}<div class="task-generation-panels">${panels}</div></div>`;
   }
   function taskMaterialDetailMarkup(group, taskRow) {
+    taskNodeTemplateSnapshots.clear();
     const meta = taskRow?.[7] || {};
     const fallback = taskMaterialDetailDefaults[group.taskId] || {};
     const outputs = taskRow ? taskItemsForRow(nodeOutputs, taskRow) : [];
@@ -5196,7 +5427,7 @@
       const storedBatches = batches.filter(batch => Number(batch.storedCount) > 0);
       const storedCount = batches.reduce((sum, batch) => sum + (Number(batch.storedCount) || 0), 0);
       const activeBatch = storedBatches.at(-1) || latestBatch;
-      const batchContent = taskGenerationBatchesMarkup(nodeKey, batches, activeBatch?.attempt);
+      const batchContent = taskGenerationBatchesMarkup(nodeKey, batches, activeBatch?.attempt, group);
       return `<section class="detail-section"><h3 class="detail-section-title">节点 ${index + 1} · ${escapeHtml(nodeItem.name)}</h3><div class="detail-fields"><div class="detail-field"><span>生成次数</span><b>${batches.length ? `${batches.length} 次` : '未记录'}</b></div><div class="detail-field"><span>入库数量</span><b>${storedCount} 份</b></div></div>${batchContent}</section>`;
     }).join('');
     const storedAssets = permittedAssets().filter(row => String(row[8]?.taskId || '') === String(group.taskId || ''));
@@ -5275,7 +5506,7 @@
           models:[...new Set(nodeRecords.map(item => item.model))],
           calls:executionCount(nodeRecords), total,
           waste:nodeWasteQuota(nodeRecords, outputMetrics.generated, outputMetrics.stored),
-          generated:outputMetrics.generated, stored:outputMetrics.stored, mediaType:outputMetrics.mediaType,
+          generated:outputMetrics.generated, stored:outputMetrics.stored, mediaType:outputMetrics.mediaType, storedByMedia:outputMetrics.storedByMedia,
           status, statusClass, latest:nodeRecords.map(item => item.time).sort().at(-1) || '—'
         };
       });
@@ -5307,25 +5538,29 @@
     const allNodes = taskGroups.flatMap(group => group.nodes);
     const listTotal = taskGroups.reduce((sum, group) => sum + group.total, 0);
     const wasteTotal = taskGroups.reduce((sum, group) => sum + group.waste, 0);
-    const mediaTotals = { 图片:{ quota:0, stored:0 }, 视频:{ quota:0, stored:0 } };
-    allNodes.filter(item => item.stored > 0).forEach(item => {
-      const mediaType = item.mediaType === '视频' ? '视频' : '图片';
-      mediaTotals[mediaType].quota += item.total;
-      mediaTotals[mediaType].stored += item.stored;
-    });
+    const mediaTotals = allNodes.reduce((totals,item) => {
+      totals.图片 += item.storedByMedia.图片;
+      totals.视频 += item.storedByMedia.视频;
+      return totals;
+    }, { 图片:0, 视频:0 });
     const totalNodes = allNodes.length;
     const totalCalls = taskGroups.reduce((sum, group) => sum + group.executions, 0);
     $('#tokenDetailCount').textContent = `共 ${taskGroups.length} 条任务`;
     $('#detailConsumedQuota').textContent = formatCny(listTotal);
-    $('#detailImageAverage').textContent = formatCny(mediaTotals.图片.stored ? mediaTotals.图片.quota / mediaTotals.图片.stored : 0);
-    $('#detailVideoAverage').textContent = formatCny(mediaTotals.视频.stored ? mediaTotals.视频.quota / mediaTotals.视频.stored : 0);
+    $('#detailImageStoredCount').textContent = `${mediaTotals.图片.toLocaleString('zh-CN')} 张`;
+    $('#detailVideoStoredCount').textContent = `${mediaTotals.视频.toLocaleString('zh-CN')} 个`;
     $('#detailWasteQuota').textContent = formatCny(wasteTotal);
     $('#detailWasteShare').textContent = `${listTotal ? (wasteTotal / listTotal * 100).toFixed(1) : '0.0'}%`;
     $('#detailCallsPerNode').textContent = (totalNodes ? totalCalls / totalNodes : 0).toFixed(2);
     $('#detailCallsPerNodeNote').textContent = `AI 调用总次数 ÷ 总节点数（${totalCalls.toLocaleString('zh-CN')} ÷ ${totalNodes.toLocaleString('zh-CN')}）`;
   }
 
-  function openDialog(title, subtitle, body, confirmText = '确定', action = null) {
+  // 原型工具弹窗显式使用独立层级；业务弹窗始终位于原型抽屉下方。
+  function openPrototypeDialog(title, subtitle, body, confirmText = '确定', action = null) {
+    openDialog(title, subtitle, body, confirmText, action, 'prototype');
+  }
+  function openDialog(title, subtitle, body, confirmText = '确定', action = null, layer = 'business') {
+    clearDialogSpecTargets($('#mainDialog'));
     const dialogBody = $('#dialogBody');
     dialogBody.onclick = null;
     dialogBody.onmousedown = null;
@@ -5339,11 +5574,13 @@
     dialogBody.innerHTML = body;
     applyDefaultBusinessTextLimits(dialogBody);
     $('#dialogConfirm').textContent = confirmText; $('#dialogConfirm').hidden = !confirmText;
+    $('#dialogConfirm').disabled = false;
     const isDetailDialog = /(?:详情|明细)$/.test(title);
     $('#mainDialog').classList.toggle('dialog-wide', isDetailDialog || Boolean($('.dialog-wide-content', $('#dialogBody'))));
     $('#mainDialog').classList.toggle('detail-dialog', isDetailDialog);
+    $('.dialog-foot').hidden = false;
     $('.dialog-cancel').hidden = isDetailDialog && confirmText === '关闭'; $('.dialog-close').hidden = false; dialogAction = action;
-    const prototypeLayerDialog = prototypeMode !== 'experience';
+    const prototypeLayerDialog = layer === 'prototype';
     $('#mainDialog').classList.toggle('prototype-layer-dialog', prototypeLayerDialog);
     if (prototypeLayerDialog) delete $('#mainDialog').dataset.businessDialogKey;
     else $('#mainDialog').dataset.businessDialogKey = title || '业务弹窗';
@@ -5363,8 +5600,8 @@
   function syncBusinessDialogHorizontalScroll() {
     const mainDialog = $('#mainDialog');
     const mediaDialog = $('#mediaPreviewDialog');
-    const hasOpenDialog = Boolean(mainDialog?.open || mediaDialog?.open);
-    const followsBusinessCanvas = hasOpenDialog && ['spec','copy'].includes(prototypeMode);
+    const hasOpenBusinessDialog = Boolean((mainDialog?.open && !mainDialog.classList.contains('prototype-layer-dialog')) || mediaDialog?.open);
+    const followsBusinessCanvas = hasOpenBusinessDialog && ['compare','spec','copy'].includes(prototypeMode);
     let scrollLeft = 0;
     if (followsBusinessCanvas) {
       scrollLeft = document.body.classList.contains('spec-panel-open')
@@ -5379,7 +5616,7 @@
     return delta < 0 ? element.scrollLeft > 0 : element.scrollLeft < max;
   }
   function forwardDialogHorizontalWheel(event) {
-    if (!['spec','copy'].includes(prototypeMode)) return;
+    if (!['compare','spec','copy'].includes(prototypeMode) || event.currentTarget.classList.contains('prototype-layer-dialog')) return;
     const delta = Math.abs(event.deltaX) > .5 ? event.deltaX : event.shiftKey && Math.abs(event.deltaY) > .5 ? event.deltaY : 0;
     if (!delta) return;
     const localScroller = event.target.closest?.('.dialog-body,.media-preview-content');
@@ -5400,6 +5637,7 @@
   function openMediaPreview(trigger) {
     const dialog = $('#mediaPreviewDialog');
     if (!dialog || !trigger) return;
+    clearDialogSpecTargets(dialog);
     const type = trigger.dataset.previewType === 'video' ? 'video' : 'image';
     const name = trigger.dataset.previewName || '素材预览';
     const media = trigger.dataset.previewSrc || trigger.querySelector('img,video')?.currentSrc || trigger.querySelector('img,video')?.src || '';
@@ -5477,7 +5715,7 @@
     $$('.node-card').forEach(card => { const on = availableNodes.includes(card.dataset.node); card.classList.toggle('selected', on); $('.node-check input', card).checked = on; }); updateWorkflow();
   }
   function useTaskTemplate(item) {
-    if (activeAiEdition === 'phase1') { toast('AI素材（一期）暂不支持任务模板', 'info'); return; }
+    if (activeAiEdition === 'phase1') { toast('AI素材暂不支持任务模板', 'info'); return; }
     if (activeAiEdition === 'phase1' && item.nodes?.includes('detail')) { toast('该模板包含素材裂变节点，当前处于开发中', 'info'); return; }
     if (activeView !== 'workspace') activeVisualDemandId = null;
     item.uses += 1; item.last = today(); persistTemplates(); setSelectedNodes(item.nodes);
@@ -5489,7 +5727,7 @@
   }
   function useTemplate(id) {
     const item = templates.find(template => template.id === Number(id)); if (!item) return;
-    if (activeAiEdition === 'phase1' && item.scope === 'task') { toast('AI素材（一期）暂不支持任务模板', 'info'); return; }
+    if (activeAiEdition === 'phase1' && item.scope === 'task') { toast('AI素材暂不支持任务模板', 'info'); return; }
     if (activeAiEdition === 'phase1' && (item.nodeKey === 'detail' || item.nodes?.includes('detail'))) { toast('素材裂变开发中，敬请期待', 'info'); return; }
     if (item.scope === 'node') {
       if (activeView !== 'workspace') activeVisualDemandId = null;
@@ -5500,12 +5738,12 @@
     } else useTaskTemplate(item);
   }
   function openTemplatePicker() {
-    if (activeAiEdition === 'phase1') { toast('AI素材（一期）暂不支持任务模板', 'info'); return; }
+    if (activeAiEdition === 'phase1') { toast('AI素材暂不支持任务模板', 'info'); return; }
     const available = templates.filter(item => item.scope === 'task' && item.status === '启用' && (activeAiEdition !== 'phase1' || !item.nodes?.includes('detail')));
     openDialog('选择任务模板','模板带入节点组合与配置，不包含任何图片或视频',`<div class="template-picker-note">套用后仍可调整节点、重新选择输入素材和修改详细要求。</div><div class="progress-list">${available.map((item,index) => `<label class="file-row template-choice"><input type="radio" name="tpl" value="${item.id}" ${index === 0 ? 'checked' : ''}><div><b>${escapeHtml(item.name)}</b><small>${item.nodes.map(key => nodeMap[key].name).join(' → ')} · ${item.type} · 已使用 ${item.uses} 次</small></div><span class="scope-badge task">任务</span></label>`).join('')}</div>`,'使用任务模板',() => { const id = $('input[name="tpl"]:checked', $('#dialogBody'))?.value; closeDialog(); useTemplate(id); });
   }
   function applyTemplateToNode(item, nodeKey) {
-    if (activeAiEdition === 'phase1' && item.scope !== 'node') { toast('AI素材（一期）仅支持节点模板', 'info'); return; }
+    if (activeAiEdition === 'phase1' && item.scope !== 'node') { toast('AI素材仅支持节点模板', 'info'); return; }
     const sourceConfig = item.scope === 'node' ? item.config : item.configs?.[nodeKey];
     if (!sourceConfig) return;
     item.uses += 1; item.last = today(); persistTemplates();
@@ -5519,13 +5757,29 @@
       (item.scope === 'node' && item.nodeKey === nodeKey) ||
       (activeAiEdition !== 'phase1' && item.scope === 'task' && item.nodes?.includes(nodeKey) && item.configs?.[nodeKey])
     ));
-    const pickerNote = activeAiEdition === 'phase1'
-      ? '一期仅提供当前节点的节点模板；任务信息、节点顺序和输入素材均保持不变。'
-      : '任务信息、节点顺序和输入素材均保持不变；任务模板中的其他节点配置不会带入。';
-    openDialog(`选择${nodeMap[nodeKey].name}模板`,'选择当前节点可用的模板，仅套用在当前节点',`<div class="template-picker-note">${pickerNote}</div><div class="progress-list">${available.length ? available.map((item,index) => `<label class="file-row template-choice"><input type="radio" name="nodeTpl" value="${item.id}" ${index === 0 ? 'checked' : ''}><div><b>${escapeHtml(item.name)}</b><small>${item.scope === 'task' ? item.nodes.map(key => nodeMap[key].name).join(' → ') : nodeMap[item.nodeKey].name} · ${item.type} · 已使用 ${item.uses} 次</small></div><span class="scope-badge ${item.scope}">${item.scope === 'task' ? '任务模板' : '节点模板'}</span></label>`).join('') : '<div class="empty-inline">暂无当前节点可用的节点模板</div>'}</div>`,available.length ? '套用至当前节点' : '',() => { const id = $('input[name="nodeTpl"]:checked', $('#dialogBody'))?.value; const item = templates.find(template => template.id === Number(id)); closeDialog(); if (item) applyTemplateToNode(item, nodeKey); });
+    let selectedId = available.length ? String(available[0].id) : '';
+    openDialog(`选择${nodeMap[nodeKey].name}模板`,'将模板的素材处理配置套用在当前节点',`<div class="node-template-picker"><label class="field node-template-search"><span>模板名称 / ID</span><input id="nodeTemplateSearch" type="search" maxlength="200" placeholder="输入模板名称或模板ID" autocomplete="off"></label><div class="node-template-picker-head" aria-hidden="true"><span></span><span>模板名称 / ID</span><span>使用次数</span><span>模板类型</span></div><div id="nodeTemplateChoices" class="progress-list"></div></div>`,'套用至当前节点',() => {
+      const item = available.find(template => String(template.id) === selectedId);
+      if (!item) return;
+      closeDialog(); applyTemplateToNode(item, nodeKey);
+    });
+    const dialogBody = $('#dialogBody');
+    const renderChoices = () => {
+      const query = $('#nodeTemplateSearch', dialogBody).value.trim().toLocaleLowerCase();
+      const matches = available.filter(item => [item.name, `TPL-${String(item.id).padStart(4,'0')}`].some(value => String(value).toLocaleLowerCase().includes(query)));
+      if (!matches.some(item => String(item.id) === selectedId)) selectedId = matches.length ? String(matches[0].id) : '';
+      $('#nodeTemplateChoices', dialogBody).innerHTML = matches.length ? matches.map(item => {
+        const templateId = `TPL-${String(item.id).padStart(4,'0')}`;
+        return `<label class="template-choice node-template-choice"><input type="radio" name="nodeTpl" value="${item.id}" aria-label="选择模板 ${escapeHtml(templateId)} ${escapeHtml(item.name)}" ${String(item.id) === selectedId ? 'checked' : ''}><div class="node-template-identity"><b>${escapeHtml(item.name)}</b><small>${escapeHtml(templateId)}</small></div><span class="node-template-uses">${Math.max(0, Number(item.uses) || 0).toLocaleString('zh-CN')}</span><span class="scope-badge ${item.scope}">${item.scope === 'task' ? '任务模板' : '节点模板'}</span></label>`;
+      }).join('') : `<div class="empty-inline">${available.length ? '暂无匹配模板，请调整模板名称或ID' : '暂无当前节点可用的模板'}</div>`;
+      $('#dialogConfirm').disabled = !selectedId;
+    };
+    dialogBody.oninput = event => { if (event.target.id === 'nodeTemplateSearch') renderChoices(); };
+    dialogBody.onchange = event => { if (event.target.matches('input[name="nodeTpl"]')) selectedId = event.target.value; };
+    renderChoices();
   }
   function saveCurrentAsTemplate() {
-    if (activeAiEdition === 'phase1') { toast('AI素材（一期）暂不支持任务模板', 'info'); return; }
+    if (activeAiEdition === 'phase1') { toast('AI素材暂不支持任务模板', 'info'); return; }
     if (!selectedNodes().length) { toast('请先选择执行节点', 'warning'); return; }
     const defaultName = $('#taskName').value.trim() || '未命名模板';
     const templateType = summarizeConfig(selectedNodes(), null, 'mediaType', '混合');
@@ -5540,6 +5794,29 @@
       const name = $('#newNodeTemplateName').value.trim(); if (!name) { toast('请填写模板名称', 'warning'); return; }
       templates.unshift({ id:Date.now(), name, scope:'node', nodeKey, nodes:[nodeKey], type:getNodeMediaType(nodeKey), creator:'管理员 / 品牌中心', uses:0, last:'尚未使用', status:'启用', config:collectConfig(nodeKey) }); persistTemplates(); closeDialog(); toast('节点模板已保存，不包含输入素材');
     });
+  }
+  function saveTaskNodeVersionAsTemplate(snapshot) {
+    if (!snapshot || !nodeMap[snapshot.nodeKey] || !Object.keys(snapshot.config || {}).length) { toast('该版本未保存配置，无法创建节点模板', 'warning'); return; }
+    const { nodeKey, attempt, taskId, taskName } = snapshot;
+    const config = JSON.parse(JSON.stringify(snapshot.config));
+    const mediaType = normalizeNodeMediaType(nodeKey, config.mediaType);
+    config.mediaType = mediaType;
+    const defaultName = `${nodeMap[nodeKey].name} V${attempt}配置模板`;
+    openDialog('保存为节点模板',`${taskName} · ${nodeMap[nodeKey].name} · V${attempt}`,`<div class="form-grid" style="padding:0"><label class="field span-2">模板名称 <em>*</em><input id="newNodeTemplateName" maxlength="40" value="${escapeHtml(defaultName)}"><small>只保存所选版本的素材处理配置，不包含输入素材或生成结果。</small></label><label class="field">模板范围<input value="单节点 · ${escapeHtml(nodeMap[nodeKey].name)}" disabled></label><label class="field">输出类型<input value="${escapeHtml(mediaType)}" disabled></label></div>`,'保存节点模板',() => {
+      const name = $('#newNodeTemplateName').value.trim().slice(0,40);
+      if (!name) { toast('请填写模板名称', 'warning'); return; }
+      if (templates.some(item => item.name.trim().toLowerCase() === name.toLowerCase())) { toast('模板名称已存在，请更换名称', 'warning'); return; }
+      let id = Date.now();
+      while (templates.some(item => item.id === id)) id += 1;
+      templates.unshift({ id, name, scope:'node', nodeKey, nodes:[nodeKey], type:mediaType, creator:`${currentUserContext.name} / ${currentUserContext.org}`, uses:0, last:'尚未使用', status:'启用', config, sourceTaskId:taskId, sourceNodeVersion:attempt });
+      persistTemplates();
+      closeDialog();
+      renderTemplates($('#templateSearch').value.trim());
+      toast(`已将${nodeMap[nodeKey].name} V${attempt}保存为节点模板`);
+    });
+  }
+  function materialPickerCardMarkup({ id, name, type = '图片', previewSrc = '', details = '', tags = '', status = '', inputName, inputType = 'radio', checked = false }) {
+    return `<label class="material-picker-card"><input type="${inputType}" name="${inputName}" value="${escapeHtml(id)}" aria-label="选择素材 ${escapeHtml(id)}" ${checked ? 'checked' : ''}><div class="material-picker-preview ${type === '视频' ? 'video' : ''}"><span class="material-picker-placeholder" aria-hidden="true">${type === '视频' ? '▶' : 'IMG'}</span>${previewSrc ? `<img src="${escapeHtml(previewSrc)}" alt="${escapeHtml(name)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.hidden=true">` : ''}<span class="material-picker-type">${escapeHtml(type)}</span></div><div class="material-picker-info"><b title="${escapeHtml(name)}">${escapeHtml(name)}</b><small class="material-picker-id">${escapeHtml(id)}</small><small class="material-picker-details">${escapeHtml(details)}</small>${status ? `<span class="material-picker-status">${escapeHtml(status)}</span>` : ''}${tags}</div></label>`;
   }
   function openPreviousOutputPicker(card) {
     if (!runState || !card) return;
@@ -5562,9 +5839,9 @@
       const version = `v${item.attempt || 1}`;
       const label = item.previewLabel || '图片';
       const status = item.retained ? '已预选入库' : '未预选入库';
-      return `<label class="file-row template-choice"><input type="radio" name="previousOutputPick" value="${escapeHtml(item.assetId)}" ${index === previousOutputs.length - 1 ? 'checked' : ''}><span class="file-thumb">IMG</span><div><b>${escapeHtml(item.name)}</b><small>${escapeHtml(previousNodeName)} · ${version} · ${escapeHtml(label)} · ${escapeHtml(item.ratio || '图片')}</small><small class="picker-status">${status}</small></div></label>`;
+      return materialPickerCardMarkup({ id:item.assetId, name:item.name, type:item.type, previewSrc:item.previewSrc || '', details:`${previousNodeName} · ${version} · ${label} · ${item.ratio || '图片'}`, status, inputName:'previousOutputPick', checked:index === previousOutputs.length - 1 });
     }).join('');
-    openDialog(`从${previousNodeName}选择`, `可选择${previousNodeName}生成的全部图片版本（共 ${previousOutputs.length} 个，包含未预选入库版本）`, `<div class="progress-list">${choices}</div>`, `选择为${targetLabel}`, () => {
+    openDialog('从上一节点选择', `可选择${previousNodeName}生成的全部图片版本（共 ${previousOutputs.length} 个，包含未预选入库版本）`, `<div class="material-picker dialog-wide-content"><div class="material-picker-summary">共 ${previousOutputs.length} 份素材 · 请选择 1 份作为${targetLabel}</div><div class="material-picker-grid">${choices}</div></div>`, `选择为${targetLabel}`, () => {
       const selectedId = $('input[name="previousOutputPick"]:checked', $('#dialogBody'))?.value;
       const selected = previousOutputs.find(item => item.assetId === selectedId);
       if (!selected || !group) { toast('请选择一份上一节点图片', 'warning'); return; }
@@ -5578,6 +5855,65 @@
       updateNodeEstimate();
       toast(`已选择${previousNodeName}的 ${selected.name} 作为${targetLabel}`, 'success');
     });
+  }
+  function setupModelPrototypePicker(available, pickedIds, inputType, remaining) {
+    const dialogBody = $('#dialogBody');
+    const filterState = Object.fromEntries(Object.values(modelFilterControls).map(key => [key,new Set()]));
+    let visibleCount = 0;
+    const updateSummary = () => {
+      const selectedNames = available.filter(asset => pickedIds.has(String(asset[1]))).map(asset => asset[0]);
+      $('#modelPickerSummary').textContent = `显示 ${visibleCount}/${available.length} 个模特原型 · 已选择 ${pickedIds.size}/${remaining} 个${selectedNames.length ? `：${selectedNames.join('、')}` : ''}`;
+      $('#dialogConfirm').disabled = pickedIds.size === 0;
+    };
+    const updateFilters = () => {
+      $$('[data-model-picker-filter]', dialogBody).forEach(element => {
+        const field = element.dataset.modelPickerFilter;
+        const selected = filterState[field];
+        const labels = new Map(libraryMultiFilterOptions(field));
+        const selectedLabels = [...selected].map(value => labels.get(value) || value);
+        const summary = $('[data-model-picker-summary]', element);
+        summary.textContent = selected.size === 0 ? '全部' : selected.size === 1 ? selectedLabels[0] : `已选 ${selected.size} 项`;
+        summary.title = selectedLabels.join('、');
+        element.classList.toggle('has-selection', selected.size > 0);
+        $('[data-model-picker-all]', element).checked = selected.size === 0;
+        $$('[data-model-picker-value]', element).forEach(input => { input.checked = selected.has(input.dataset.modelPickerValue); });
+      });
+    };
+    const closeFilters = () => { $$('[data-model-picker-filter][open]', dialogBody).forEach(element => { element.open = false; }); };
+    const renderChoices = () => {
+      const filtered = available.filter(asset => matchesModelPrototypeFilters(asset[5], filterState));
+      visibleCount = filtered.length;
+      $('#modelPickerGrid').innerHTML = filtered.length ? filtered.map((asset,index) => modelPrototypeCard(asset[5], index, { inputName:'categoryAssetPick', inputType, checked:pickedIds.has(String(asset[1])) })).join('') : '<div class="model-prototype-empty"><b>未找到匹配的模特原型</b><span>可重置筛选条件后查看全部原型。</span></div>';
+      updateSummary();
+    };
+    dialogBody.onchange = event => {
+      const filter = event.target.closest('[data-model-picker-filter]');
+      if (filter && event.target.matches('[data-model-picker-all],[data-model-picker-value]')) {
+        const selected = filterState[filter.dataset.modelPickerFilter];
+        if (event.target.hasAttribute('data-model-picker-all')) selected.clear();
+        else if (event.target.checked) selected.add(event.target.dataset.modelPickerValue);
+        else selected.delete(event.target.dataset.modelPickerValue);
+        updateFilters();
+        return;
+      }
+      if (event.target.name !== 'categoryAssetPick') return;
+      if (event.target.checked) {
+        if (inputType === 'radio') pickedIds.clear();
+        else if (pickedIds.size >= remaining) { event.target.checked = false; toast(`该分类还可选择 ${remaining} 个模特原型`, 'warning'); return; }
+        pickedIds.add(event.target.value);
+      } else pickedIds.delete(event.target.value);
+      updateSummary();
+    };
+    dialogBody.onclick = event => {
+      if (event.target.closest('#resetModelPickerFilters')) {
+        Object.values(filterState).forEach(selected => selected.clear());
+        updateFilters(); closeFilters(); renderChoices();
+      } else if (event.target.closest('#filterModelPicker')) { closeFilters(); renderChoices(); }
+    };
+    $$('[data-model-picker-filter]', dialogBody).forEach(element => element.addEventListener('toggle', () => {
+      if (element.open) $$('[data-model-picker-filter][open]', dialogBody).forEach(other => { if (other !== element) other.open = false; });
+    }));
+    renderChoices();
   }
   function openCategoryAssetPicker(nodeKey, category, max) {
     const sceneImageOnly = nodeKey === 'scene' && ['mainProduct','styling'].includes(category);
@@ -5595,15 +5931,21 @@
     const assetSource = sceneConfigGroup === 'model' ? 'model-prototype' : sceneConfigGroup === 'setting' ? 'scene-template' : 'library';
     const sourceName = sceneConfigGroup === 'model' ? '模特原型' : sceneConfigGroup === 'setting' ? '场景模板' : '素材库';
     const pickerTitle = sceneConfigGroup === 'model' ? '从模特原型选择' : sceneConfigGroup === 'setting' ? '从场景模板选择' : '从素材库选择';
-    const modelPrototypeAssets = prototypes.filter(item => item.kind === 'model' && item.status !== '停用').map(item => [modelPrototypeTitle(item),item.id,item.mediaType,item.details,item.config || {}]);
+    const modelPrototypeAssets = prototypes.filter(item => item.kind === 'model' && item.status !== '停用').map(item => [modelPrototypeTitle(item),item.id,item.mediaType,item.details,item.config || {},item]);
     const sceneTemplateAssets = prototypes.filter(item => item.kind === 'scene' && item.status !== '停用').map(item => [scenePrototypeTitle(item),item.id,item.mediaType,item.details,item.config || {}]);
     const assetPool = sceneConfigGroup === 'model' ? modelPrototypeAssets : sceneConfigGroup === 'setting' ? sceneTemplateAssets : permittedAssets().filter(asset => assetStatus(asset) === '正常');
-    const available = assetPool.filter(asset => acceptedMediaTypes.includes(asset[2])).slice(0,8);
+    const available = assetPool.filter(asset => acceptedMediaTypes.includes(asset[2]));
+    const isLibraryPicker = !sceneConfigGroup;
+    const isModelPicker = sceneConfigGroup === 'model';
+    const pickedIds = new Set(available.length ? [String(available[0][1])] : []);
+    const filterTagIds = new Set();
     const inputType = remaining > 1 ? 'checkbox' : 'radio';
     const choices = available.length ? available.map((asset,index) => `<label class="file-row template-choice"><input type="${inputType}" name="categoryAssetPick" value="${escapeHtml(asset[1])}" ${index === 0 ? 'checked' : ''}><span class="file-thumb">${asset[2] === '视频' ? 'MP4' : 'IMG'}</span><div><b>${escapeHtml(asset[0])}</b><small>${asset[1]} · ${asset[3]}</small></div></label>`).join('') : `<div class="empty-inline">${sceneConfigGroup ? '原型库中暂无匹配类型的原型' : '素材库中暂无匹配类型的素材'}</div>`;
     const pickerConfirmText = sceneConfigGroup === 'model' ? '选择模特原型' : sceneConfigGroup === 'setting' ? '选择场景模板' : '选择素材';
-    openDialog(pickerTitle,`当前已有 ${currentCount}/${max}${unit}，还可选择 ${remaining}${unit}`,`<div class="progress-list">${choices}</div>`,pickerConfirmText,() => {
-      const selectedIds = $$('input[name="categoryAssetPick"]:checked', $('#dialogBody')).map(input => input.value);
+    const libraryBody = `<div class="material-picker dialog-wide-content"><div class="material-picker-toolbar"><label><span>素材 ID</span><input id="materialPickerSearch" type="search" placeholder="输入完整或部分素材 ID" maxlength="200"></label><div class="material-picker-tag-filter"><span>标签（匹配任一项）</span><details id="materialPickerTags"><summary><span id="materialPickerTagSummary">全部标签</span><i>⌄</i></summary><div class="material-picker-tag-menu"><label><input type="checkbox" data-material-picker-tag="__untagged__"><span>无标签</span></label>${assetTags.map(tag => `<label><input type="checkbox" data-material-picker-tag="${escapeHtml(tag.id)}"><span>${escapeHtml(tag.name)}</span></label>`).join('')}</div></details></div><button class="button secondary" type="button" id="resetMaterialPickerFilters">重置</button></div><div class="material-picker-summary" id="materialPickerSummary" aria-live="polite"></div><div class="material-picker-grid" id="materialPickerGrid"></div></div>`;
+    const modelBody = `<div class="model-prototype-picker dialog-wide-content"><div class="model-prototype-filters" aria-label="模特原型筛选">${modelConfigFields.map(([field,label]) => `<div class="prototype-multi-filter"><span>${escapeHtml(label)}</span><details class="prototype-multi-select" data-model-picker-filter="${modelFilterControls[field]}"><summary><span data-model-picker-summary>全部</span><i>⌄</i></summary><div class="prototype-multi-menu" role="group" aria-label="${escapeHtml(label)}多选"><label class="prototype-multi-option prototype-multi-all"><input type="checkbox" data-model-picker-all checked><span>全部</span></label>${libraryMultiFilterOptions(modelFilterControls[field]).map(([value,name]) => `<label class="prototype-multi-option"><input type="checkbox" data-model-picker-value="${escapeHtml(value)}"><span>${escapeHtml(name)}</span></label>`).join('')}</div></details></div>`).join('')}<div class="model-filter-actions"><button class="text-button" id="resetModelPickerFilters" type="button">重置</button><button class="button primary" id="filterModelPicker" type="button"><span aria-hidden="true">⌕</span>筛选</button></div></div><div class="material-picker-summary" id="modelPickerSummary" aria-live="polite"></div><div class="model-prototype-grid" id="modelPickerGrid" aria-live="polite"></div></div>`;
+    openDialog(pickerTitle,`当前已有 ${currentCount}/${max}${unit}，还可选择 ${remaining}${unit}`,isModelPicker ? modelBody : isLibraryPicker ? libraryBody : `<div class="progress-list">${choices}</div>`,pickerConfirmText,() => {
+      const selectedIds = isLibraryPicker || isModelPicker ? [...pickedIds] : $$('input[name="categoryAssetPick"]:checked', $('#dialogBody')).map(input => input.value);
       if (!selectedIds.length) { toast('请至少选择一份素材', 'warning'); return; }
       if (selectedIds.length > remaining) { toast(`该分类还可选择 ${remaining} 份素材`, 'warning'); return; }
       const selectedAssets = selectedIds.map(id => available.find(asset => asset[1] === id)).filter(Boolean);
@@ -5625,6 +5967,47 @@
       }
       closeDialog(); markDirty(); updateNodeEstimate(); toast(`已从${sourceName}选择 ${selectedAssets.length} 份素材`);
     });
+    if (isModelPicker) { setupModelPrototypePicker(available, pickedIds, inputType, remaining); return; }
+    if (!isLibraryPicker) return;
+    const dialogBody = $('#dialogBody');
+    let visibleCount = 0;
+    const updateSummary = () => {
+      $('#materialPickerSummary').textContent = `显示 ${visibleCount}/${available.length} 份素材 · 已选择 ${pickedIds.size}/${remaining} 份（筛选后保留已选素材）`;
+      $('#dialogConfirm').disabled = pickedIds.size === 0;
+    };
+    const renderChoices = () => {
+      const query = $('#materialPickerSearch').value.trim().toLowerCase();
+      const filtered = available.filter(asset => {
+        const ids = assetTagIds(asset);
+        const matchesTags = !filterTagIds.size || [...filterTagIds].some(id => id === '__untagged__' ? !ids.length : ids.includes(id));
+        return String(asset[1]).toLowerCase().includes(query) && matchesTags;
+      });
+      visibleCount = filtered.length;
+      const tagNames = [...filterTagIds].map(id => id === '__untagged__' ? '无标签' : assetTags.find(tag => tag.id === id)?.name).filter(Boolean);
+      $('#materialPickerTagSummary').textContent = tagNames.length ? tagNames.join('、') : '全部标签';
+      $('#materialPickerGrid').innerHTML = filtered.length ? filtered.map(asset => materialPickerCardMarkup({ id:asset[1], name:asset[0], type:asset[2], previewSrc:asset[8]?.previewSrc || '', details:asset[3], tags:assetTagMarkup(asset,'无标签'), inputName:'categoryAssetPick', inputType, checked:pickedIds.has(String(asset[1])) })).join('') : '<div class="material-picker-empty"><b>暂无匹配素材</b><p>请调整素材 ID 或标签筛选条件。</p></div>';
+      updateSummary();
+    };
+    dialogBody.oninput = event => { if (event.target.id === 'materialPickerSearch') renderChoices(); };
+    dialogBody.onchange = event => {
+      const tagId = event.target.dataset.materialPickerTag;
+      if (tagId) { if (event.target.checked) filterTagIds.add(tagId); else filterTagIds.delete(tagId); renderChoices(); return; }
+      if (event.target.name !== 'categoryAssetPick') return;
+      if (event.target.checked) {
+        if (inputType === 'radio') pickedIds.clear();
+        else if (pickedIds.size >= remaining) { event.target.checked = false; toast(`该分类还可选择 ${remaining} 份素材`, 'warning'); return; }
+        pickedIds.add(event.target.value);
+      } else pickedIds.delete(event.target.value);
+      updateSummary();
+    };
+    dialogBody.onclick = event => {
+      if (!event.target.closest('#resetMaterialPickerFilters')) return;
+      $('#materialPickerSearch').value = '';
+      filterTagIds.clear();
+      $$('[data-material-picker-tag]', dialogBody).forEach(input => { input.checked = false; });
+      renderChoices();
+    };
+    renderChoices();
   }
 
   function openSceneAudioPicker(field) {
@@ -6010,7 +6393,7 @@
         const outputLabel = output.previewLabel || output.view || output.views?.join('、') || '';
         const detail = [nodeMap[output.nodeKey].name,kindLabel,`临时版本 V${output.attempt}`,output.type,output.ratio,outputLabel].filter(Boolean).join(' · ');
         const destination = kind === 'material' ? '存入素材库' : `存入原型库 · ${kindLabel}`;
-        return `<div class="retained-asset" data-output-kind="${kind}"><div class="cache-preview media-preview-trigger" data-media-preview data-preview-type="${output.type === '视频' ? 'video' : 'image'}" data-preview-name="${escapeHtml(output.name)}" data-preview-source="生成结果" role="button" tabindex="0" aria-label="放大预览：${escapeHtml(output.name)}">${output.type === '视频' ? '▶' : 'IMG'}</div><div><b>${escapeHtml(output.name)}</b><small>${escapeHtml(detail)}</small></div><label><input class="store-retained-output" type="checkbox" value="${escapeHtml(output.assetId)}" checked><span>${destination}</span></label></div>`;
+        return `<div class="retained-asset" data-output-kind="${kind}"><div class="cache-preview retained-asset-preview media-preview-trigger ${output.type === '视频' ? 'video' : ''}" data-media-preview data-preview-type="${output.type === '视频' ? 'video' : 'image'}" data-preview-name="${escapeHtml(output.name)}" data-preview-source="生成结果" role="button" tabindex="0" aria-label="放大预览：${escapeHtml(output.name)}"><b>${output.type === '视频' ? '▶' : 'IMG'}</b><span class="retained-asset-type">${escapeHtml(output.type)}</span></div><div class="retained-asset-info"><b title="${escapeHtml(output.name)}">${escapeHtml(output.name)}</b><small>${escapeHtml(detail)}</small></div><label class="retained-asset-store"><input class="store-retained-output" type="checkbox" value="${escapeHtml(output.assetId)}" aria-label="入库：${escapeHtml(output.name)}" checked><span>${destination}</span></label></div>`;
       }).join('');
       return `<section class="asset-kind-group"><h3 data-runtime-copy>${label}<small>${group.length} 份待筛选</small></h3><div class="asset-kind-list">${rows}</div></section>`;
     }).join('') : '<div class="retained-empty"><b>没有预选入库的素材</b><p>完成任务后，所有生成结果都将作为临时内容清理；额度执行明细仍会保留。</p></div>';
@@ -6050,9 +6433,9 @@
         const quality = runState.configs?.[output.nodeKey]?.quality || '自动适配';
         const demand = visualDemands.find(item => item.id === runState.visualDemandId);
         const producerIdentity = resolveAssetProducerIdentity(demand?.owner || currentUserContext.name);
-        const metadata = { quality, sourceTask, sourceNode, creator:`${currentUserContext.name} / ${runState.org}`, ...producerIdentity, tagIds:[], taskId:runState.id, visualDemandId:runState.visualDemandId || '', spu:demand?.spu || '', expression:demand?.expression || '', mainSellingPoint:demand?.mainSellingPoint || '', secondarySellingPoint:demand?.secondarySellingPoint || '', scene:demand?.scene || '', version:demand ? 'V1' : '', materialCategory:demand?.materialCategory || '', completedAt };
-        const storageMonth = String(output.time || completedAt).slice(0,7).replace('-', '/');
-        const assetRow = [output.name,output.assetId,output.type,`${sourceTask} / ${sourceNode}`,`${output.ratio}${output.type === '视频' ? ' · 12s' : ''}`,`/AI素材/素材库/${storageMonth}/${sourceTask}`,'正常',output.time,metadata];
+        const metadata = { quality, sourceTask, sourceNode, creator:`${currentUserContext.name} / ${runState.org}`, ...producerIdentity, tagIds:[], taskId:runState.id, visualDemandId:runState.visualDemandId || '', spu:demand?.spu || '', expression:demand?.expression || '', mainSellingPoint:demand?.mainSellingPoint || '', secondarySellingPoint:demand?.secondarySellingPoint || '', scene:demand?.scene || '', version:demand ? 'V1' : '', materialCategory:demand?.materialCategory || '', completedAt, storedAt:completedAt, generatedAt:output.time || '' };
+        const storageMonth = completedAt.slice(0,7).replace('-', '/');
+        const assetRow = [output.name,output.assetId,output.type,`${sourceTask} / ${sourceNode}`,`${output.ratio}${output.type === '视频' ? ' · 12s' : ''}`,`/AI素材/素材库/${storageMonth}/${sourceTask}`,'正常',completedAt,metadata];
         metadata.naming = buildAssetNaming(assetRow);
         assets.unshift(assetRow);
       }
@@ -6146,7 +6529,7 @@
     toast('已返回创建任务，可继续修改任务信息和节点', 'info');
   }
 
-  $$('.sub-nav').forEach(button => button.addEventListener('click', () => {
+  $$('.sub-nav[data-view]').forEach(button => button.addEventListener('click', () => {
     setAiEdition(button.closest('[data-ai-edition]')?.dataset.aiEdition || 'full');
     showView(button.dataset.view);
   }));
@@ -6305,6 +6688,11 @@
     $('#specRichEditor').classList.toggle('is-empty', !richHtmlHasContent($('#specRichEditor').innerHTML));
     updateSpecSaveState();
   });
+  document.addEventListener('selectionchange', () => {
+    if (prototypeMode !== 'spec' || !selectedSpecTarget) return;
+    const range = captureRichEditorRange();
+    if (range) lastRichEditorRange = range;
+  });
   $('#specRichEditor').addEventListener('click', event => {
     const cell = event.target.closest('td,th');
     activeRichTableCell = cell && $('#specRichEditor').contains(cell) ? cell : null;
@@ -6383,7 +6771,7 @@
     if (!selectedSpecTarget) return;
     const targetId = selectedSpecTarget.dataset.specId;
     const targetLabel = specDisplayName(selectedSpecTarget);
-    openDialog('清空模块说明', targetLabel, '<div class="permission-note" style="margin:0"><span>i</span><p>将清空当前原型说明的全部富文本内容，其他模块不受影响。</p></div>', '确认清空', () => {
+    openPrototypeDialog('清空模块说明', targetLabel, '<div class="permission-note" style="margin:0"><span>i</span><p>将清空当前原型说明的全部富文本内容，其他模块不受影响。</p></div>', '确认清空', () => {
       specState[targetId] = { feature:'', data:'', interaction:'' };
       specDirty = true;
       closeDialog();
@@ -6550,7 +6938,7 @@
     if (prototypeMode === 'spec') { event.preventDefault(); saveSpecs(); }
   });
   $('#refreshPage').addEventListener('click', () => { showView(activeView === 'tasks' && activeTaskRecordTab === 'usage' ? 'usage' : activeView); toast('页面数据已刷新'); });
-  $('#prototypeInfo').addEventListener('click', () => openDialog('原型使用说明','面向产品、业务与研发的协作原型',`<div class="progress-list"><p><b>纯体验：</b>业务、产品和研发无干扰体验完整功能流程。</p><p><b>技术查看：</b>使用独立青绿色原型标识，研发与产品可在操作页面时对照组件说明。</p><p><b>原型说明：</b>使用独立紫色原型标识；按钮、表单、卡片、表格与上传区等业务组件均可点击创建富文本说明。</p><p><b>编辑文字：</b>产品经理调整页面文字，并可新增、删除下拉选项或指定选中项。</p><p><b>动态数据优先：</b>生成视角、跨版本预选总数、版本号及已消耗总额度始终以当前任务实际数据为准，不受“编辑文字”中的历史修改影响。</p><p><b>逐步执行：</b>当前节点生成至少一份素材后，才可进入下一节点。</p><p><b>额度治理：</b>人民币额度可追溯到任务、节点与每次生成的执行阶段。</p></div>`,'我知道了',closeDialog));
+  $('#prototypeInfo').addEventListener('click', () => openDialog('原型使用说明','面向产品、业务与研发的协作原型',`<div class="progress-list"><p><b>纯体验：</b>业务、产品和研发无干扰体验完整功能流程。</p><p><b>技术查看：</b>使用独立青绿色原型标识，研发与产品可在操作页面时对照组件说明。</p><p><b>动态数据优先：</b>生成视角、跨版本预选总数、版本号及已消耗总额度始终以当前任务实际数据为准，不受“编辑文字”中的历史修改影响。</p><p><b>逐步执行：</b>当前节点生成至少一份素材后，才可进入下一节点。</p><p><b>额度治理：</b>人民币额度可追溯到任务、节点与每次生成的执行阶段。</p></div>`,'我知道了',closeDialog));
   $('#orgSelect').addEventListener('change', markDirty); $('#requesterSelect').addEventListener('change', markDirty); $('#businessLineSelect').addEventListener('change', markDirty); $('#taskName').addEventListener('input', () => { $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); markDirty(); });
   $$('.node-check input').forEach(input => input.addEventListener('change', () => { if (input.disabled) return; input.closest('.node-card').classList.toggle('selected', input.checked); updateWorkflow(); }));
   $$('.node-card').forEach(card => card.addEventListener('click', event => {
@@ -6680,6 +7068,12 @@
     else if ($('#mainDialog').open) { event.preventDefault(); closeDialog(); }
   });
   $('#mainDialog').addEventListener('click', event => {
+    const templateStatusToggle = event.target.closest('[data-template-status-toggle]');
+    if (templateStatusToggle) { toggleNodeTemplateStatus(templateStatusToggle.dataset.templateStatusToggle); return; }
+    const templateDelete = event.target.closest('[data-template-delete]');
+    if (templateDelete) { deleteNodeTemplate(templateDelete.dataset.templateDelete); return; }
+    const saveNodeVersion = event.target.closest('.save-node-version-template');
+    if (saveNodeVersion) { saveTaskNodeVersionAsTemplate(taskNodeTemplateSnapshots.get(saveNodeVersion.dataset.nodeVersionTemplate)); return; }
     const taskAssetsShortcut = event.target.closest('.task-assets-shortcut');
     if (taskAssetsShortcut) { showTaskAssets(taskAssetsShortcut.dataset.taskId); return; }
     const tab = event.target.closest('.task-generation-tab');
@@ -6855,7 +7249,7 @@
     }
     if (detail) {
       const item = templates.find(template => template.id === Number(detail.dataset.id));
-      if (item) openDialog('模板详情',item.name,templateDetailBody(item),'使用模板',() => { closeDialog(); useTemplate(item.id); });
+      if (item) openTemplateDetail(item);
     }
   });
   $$('[data-task-record-tab]').forEach(button => button.addEventListener('click', () => {
@@ -6987,5 +7381,18 @@
     if (document.visibilityState === 'hidden') flushDesignStateBeforeExit();
   });
 
+  departmentManager = window.createDepartmentManagement({ openDialog, closeDialog, toast, escapeHtml, showView, users:platformUserDirectory, getUsers:()=>userManager?.getUsers() || platformUserDirectory, onChange:()=>userManager?.render(), refresh:scheduleEditableRefresh });
+  userManager = window.createUserManagement({ openDialog, closeDialog, toast, escapeHtml, showView, users:platformUserDirectory, departments:departmentManager, refresh:scheduleEditableRefresh });
+  menuManager = window.createMenuManagement({openDialog,closeDialog,toast,escapeHtml,showView,refresh:scheduleEditableRefresh});
   observeBusinessTextLimits(); restoreDraft(); setAiEdition('phase1'); setCreationStage(1); renderWorkbench(); renderVisualDemands(); renderTasks(); renderAssets(); renderPrototypeLibrary(); renderTemplates(); renderTokenDetails(); updateNodeSummary(); updateVisualDemandSourceBanner(); $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); applyDesignState(); setPrototypeMode('experience'); observeDynamicDesignContent(); updateDesignSaveState(); updateSpecSaveState();
+  const openManagementRoute = () => {
+    const route = {'#/permission/department':'departments','#/permission/user':'users','#/permission/menu':'menus'}[location.hash];
+    if (!route) return;
+    if ($('#permissionManagementMenu').hidden) $('#togglePermissionManagement').click();
+    showView(route);
+  };
+  window.addEventListener('hashchange',openManagementRoute);
+  openManagementRoute();
+})();
+
 })();
