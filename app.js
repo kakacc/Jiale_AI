@@ -182,10 +182,11 @@
     return value;
   }
 
-  const viewNames = { workbench:'工作台', demands:'视觉需求', workspace:'新建任务', tasks:'任务与消耗', assets:'素材库', templates:'原型库', usage:'用量统计', permissions:'节点权限', departments:'部门管理', users:'用户管理', menus:'菜单管理' };
+  const viewNames = { workbench:'工作台', demands:'视觉需求', demandRecords:'视觉需求', workspace:'新建任务', tasks:'任务与消耗', assets:'素材库', templates:'原型库', usage:'用量统计', permissions:'节点权限', departments:'部门管理', users:'用户管理', menus:'菜单管理' };
   let departmentManager = null;
   let userManager = null;
   let menuManager = null;
+  let visualDemandRecordsManager = null;
   const nodeMap = {
     clean: { name:'商品重塑', tokens:1200, desc:'样板图/人台图生成高端3D透明底图', model:'GPT Image 2', suffix:'清理结果' },
     scene: { name:'场景生成', tokens:2800, desc:'将素材放入指定人物、环境或营销场景', model:'GPT Image 2', suffix:'场景结果' },
@@ -695,7 +696,7 @@
     else tasks.unshift(row);
   }
 
-  const currentUserContext = { name:'管理员', role:'org-admin', org:'品牌中心', isOrgAdmin:true, assetVisibility:'all' };
+  const currentUserContext = { id:'USR-0001', name:'管理员', role:'org-admin', org:'品牌中心', isOrgAdmin:true, assetVisibility:'all' };
   let workbenchActivity = loadStored('ai-material-workbench-activity-v2', [
     { time:'2026-09-20 10:18', completed:3, userQuota:15.36, orgQuota:76.86 },
     { time:'2026-09-18 16:40', completed:4, userQuota:20.48, orgQuota:124.00 },
@@ -709,6 +710,8 @@
   ];
 
   const defaultDemandOptionConfig = {
+    adPage:['USpage','DEpage','Womenpage','DG','ESpage','SApage'],
+    adMaterialSource:['VD','UGCtt','UGCig','PGC','PA'],
     businessChannel:['DTC','AMZ','其它'],
     channelCategory:['Paid Social','WEB','Email','Paid Search','AMZ拍摄协助','AMZ页面调性','OTH'],
     productLevel:['无','新品','潜力品','旺销','爆品'],
@@ -729,7 +732,7 @@
     }
   };
   const demandOptionFieldLabels = {
-    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型'
+    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型', adPage:'投放主页（广告）', adMaterialSource:'素材来源（广告）'
   };
   const demandOptionIdentityOverrides = {
     'businessChannel:其它':{ id:'OTHER', label:'其它' },
@@ -785,6 +788,10 @@
   }
   let demandOptionHistory = normalizeDemandOptionHistory(loadStoredObject(demandOptionHistoryKey, {}));
   rememberDemandOptionConfig({}, demandOptionConfig);
+  if (localStorage.getItem('ai-material-ad-dimensions-schema-v1') !== '20261019-v11') {
+    persistDemandOptions();
+    localStorage.setItem('ai-material-ad-dimensions-schema-v1','20261019-v11');
+  }
   let visualDemands = loadStored('ai-material-visual-demands-v1', [
     {id:'VR-202609-001',title:'260903周四-Modal 四大卖点',spu:'260903周四-Modal',businessChannel:'DTC',channelCategory:'Email',productLevel:'新品',demandSource:'月度视觉安排',materialType:'IMG',expression:'Campaign',mainSellingPoint:'四大卖点',scene:'网站页面',bodyType:'Average',requirements:'用于 EDM 四大卖点展示，保持品牌调性。',reference:'9月视觉安排总表',fbInfo:'',edmInfo:'四大卖点邮件视觉',requester:'沈玲燕',priority:'P0',requestDate:'2026-09-01',ddl:'2026-09-02',owner:'THD',materialCategory:'ProductBenefits',status:'已完成',linkedTaskIds:['TSK-DEMAND-001'],createdAt:'2026-09-01 09:10',updatedAt:'2026-09-02 18:20'},
     {id:'VR-202609-002',title:'FI-20250489 网站视觉优化',spu:'FI-20250489',businessChannel:'DTC',channelCategory:'WEB',productLevel:'潜力品',demandSource:'月度视觉安排',materialType:'IMG',expression:'网站UI',mainSellingPoint:'版型与剪裁',scene:'网站页面',bodyType:'Slim',requirements:'补充商品详情页模块与移动端构图。',reference:'',fbInfo:'',edmInfo:'',requester:'潘金兰',priority:'P2',requestDate:'2026-09-11',ddl:'2026-09-16',owner:'LZJ',materialCategory:'ProductDisplay',status:'待创建任务',linkedTaskIds:[],createdAt:'2026-09-11 10:20',updatedAt:'2026-09-11 10:20'},
@@ -806,8 +813,8 @@
   localStorage.setItem('ai-material-visual-demands-v1', JSON.stringify(visualDemands));
   let activeVisualDemandId = null;
 
-  let activeView = 'workbench';
-  let activeAiEdition = 'phase1';
+  let activeView = 'demandRecords';
+  let activeAiEdition = 'main';
   let activePrototypeTab = 'model';
   let activeTaskRecordTab = 'usage';
   let activeUsageKind = 'org';
@@ -998,6 +1005,21 @@
       feature:'<p>在工作台右侧半栏展示尚未完成的视觉需求，与待完成任务并列。</p>',
       data:'<p>排除已完成和已取消需求，展示需求名称、需求 ID、SPU、优先级和 DDL。</p>',
       interaction:'<p>点击“查看需求”打开需求详情；“查看全部”进入视觉需求列表。</p>'
+    },
+    'demand-records-page': {
+      feature:'<p>PAGE-AI-VISUAL-DEMAND-RECORDS：独立管理需求、交付素材与广告命名，一期不强制AI任务。仅新AI素材入口使用，P1/P2保留原范围。</p>',
+      data:'<p>需求、素材、广告命名分别使用独立稳定ID；一需求多素材，一素材多命名。D-AI-DEMAND-RECORD-TYPE区分视觉组制作和投放组制作；RULE-AI-DEMAND-RECORD-DELIVERY按类型校验完成。投放广告以需求下广告命名为数据源，按命名ID显示一行。</p>',
+      interaction:'<p>基础信息新增必选需求类型，仅视觉组制作、投放组制作；平台任务制作类型预留。页面页签按需求列表、素材、投放广告排序，移除迁移记录及导入入口，由研发手动迁移。视觉组完成前至少记录一个有效素材URL，投放组不要求URL；素材页签可登记与编辑需求产生的素材；从素材创建广告命名时带入需求和素材ID，保存后切换到投放广告。新增或编辑命名同步更新投放广告。当前为固定管理员原型，正式权限由服务端落实。</p>'
+    },
+    'demand-records-metrics': {
+      feature:'<p>展示当前筛选结果中的全部、待处理、进行中、已交付或已关闭需求。</p>',
+      data:'<p>按需求ID去重计数；引用M-AI-DEMAND-RECORD-COUNT、M-AI-DEMAND-RECORD-PENDING、M-AI-DEMAND-RECORD-RUNNING、M-AI-DEMAND-RECORD-DELIVERED。</p>',
+      interaction:'<p>应用搜索、月份、人员、优先级与状态后同步更新；不把交付素材数或广告命名数作为需求完成条件。</p>'
+    },
+    'demand-records-list': {
+      feature:'<p>需求列表与详情承接需求提出、人工或AI制作、交付登记及广告命名。</p>',
+      data:'<p>D-AI-DEMAND-RECORD-STATUS：待处理、进行中、已交付、已关闭、已取消；状态为原型草案。历史来源保留原记录、原字段快照与批次。</p>',
+      interaction:'<p>取消和关闭保留历史。视觉组制作确认已交付或已关闭前至少有一个有效素材URL；投放组制作不要求素材URL，无素材时也可按需求登记广告命名。投放广告支持查询、复制、编辑、导出和查看来源需求，不把命名记录视为实际已投放状态。</p>'
     },
     'demands-page': {
       feature:'<p>作为创建 AI 素材任务的前置业务环节，集中登记、查询和维护视觉需求，并从需求发起任务。AI素材暂不开放需求业务功能，但保留“配置维度选项值”入口及完整配置能力。</p>',
@@ -2825,6 +2847,7 @@
     scrollBusinessCanvasTop();
     if (activeView === 'workbench') renderWorkbench();
     if (activeView === 'demands' && !demandUnavailable) renderVisualDemands();
+    if (activeView === 'demandRecords') visualDemandRecordsManager?.render();
     if (activeView === 'templates') {
       if (activePrototypeTab === 'config') renderTemplates($('#templateSearch').value.trim());
       else renderPrototypeLibrary();
@@ -2846,10 +2869,10 @@
     }
   }
   function aiEditionLabel(edition = activeAiEdition) {
-    return edition === 'phase1' ? 'AI素材' : 'AI素材（参考）';
+    return { phase1:'AI素材（P1）', full:'AI素材（P2）', main:'AI素材' }[edition] || 'AI素材';
   }
   function setAiEdition(edition) {
-    activeAiEdition = edition === 'phase1' ? 'phase1' : 'full';
+    activeAiEdition = ['phase1','full','main'].includes(edition) ? edition : 'full';
     const label = aiEditionLabel();
     document.body.classList.toggle('ai-edition-phase1', activeAiEdition === 'phase1');
     $('#breadcrumbModule').textContent = label;
@@ -3917,7 +3940,7 @@
     }).join('') : '<tr><td colspan="12" class="empty-cell">未找到匹配的视觉需求</td></tr>';
     $('#visualDemandCount').textContent = `共 ${list.length} 条`;
   }
-  function demandFormMarkup(item = {}) {
+  function demandFormMarkup(item = {}, settings = {}) {
     const isNew = !item.id;
     const business = item.businessChannel || (isNew ? 'DTC' : '');
     const productLevel = item.productLevel || (isNew ? 'NONE' : '');
@@ -3952,11 +3975,11 @@
       <div class="demand-form-section"><div class="demand-form-section-title"><b>协作信息</b><span>明确需求与制作责任人</span></div><div class="demand-form-grid">
         ${demandUserPickerMarkup('requester','需求对接人',requester,true)}
         <label class="field"><span class="field-label">优先级 ${demandFieldHelpMarkup('日常安排 定义：P2常规，素材下需 定义：P1优先 或 P0紧急')} <em class="required-mark">*</em></span><select name="priority" required>${demandOptionMarkup('priority', item.priority || 'P2')}</select></label>
-        ${demandUserPickerMarkup('owner','制作人',owner,true)}
+        ${demandUserPickerMarkup('owner','制作人',owner,!settings.allowUnassignedOwner)}
       </div></div>
     </form>`;
   }
-  function readDemandForm(existing = null) {
+  function readDemandForm(existing = null, settings = {}) {
     const form = $('#visualDemandForm');
     const preservesDeletedOption = control => existing && control.matches('select[name]') && control.dataset.originalValue && control.dataset.userChanged !== 'true' && !demandOptionByValue(control.name, control.dataset.originalValue);
     const missingRequired = [...form.querySelectorAll('[required]')].find(control => !String(control.value || '').trim() && !preservesDeletedOption(control));
@@ -3981,7 +4004,7 @@
       });
     }
     if (!values.requester) { toast('请选择需求对接人', 'warning'); $('[data-demand-user-picker="requester"] > summary', form)?.focus(); return null; }
-    if (!values.owner) { toast('请选择制作人', 'warning'); $('[data-demand-user-picker="owner"] > summary', form)?.focus(); return null; }
+    if (!values.owner && !settings.allowUnassignedOwner) { toast('请选择制作人', 'warning'); $('[data-demand-user-picker="owner"] > summary', form)?.focus(); return null; }
     if (values.ddl && values.requestDate && values.ddl < values.requestDate) { toast('DDL 不能早于下需时间', 'warning'); form.elements.ddl.focus(); return null; }
     const timestamp = nowText();
     return { ...(existing || {}), ...values, id:existing?.id || `VR-${new Date().toISOString().slice(0,10).replaceAll('-','')}-${String(Date.now()).slice(-4)}`, status:existing?.status || '待创建任务', linkedTaskIds:Array.isArray(existing?.linkedTaskIds) ? existing.linkedTaskIds : [], createdAt:existing?.createdAt || timestamp, updatedAt:timestamp };
@@ -4177,7 +4200,8 @@
       for (const option of values) {
         const identifier = String(option.id || '').trim();
         const label = String(option.label || '').trim();
-        if (!identifierPattern.test(identifier)) return '英文标识仅支持英文字母、数字和连字符';
+        const unchangedLegacyIdentifier = Boolean(option._originId) && identifier === option._originId && (demandOptionConfig[field] || []).some(current => current.id === identifier);
+        if (!identifierPattern.test(identifier) && !unchangedLegacyIdentifier) return '英文标识仅支持英文字母、数字和连字符';
         if (!label) return '中文显示不能为空';
         const identifierKey = identifier.toLowerCase();
         if (identifiers.has(identifierKey)) return '同一维度中的英文标识必须唯一';
@@ -4209,7 +4233,7 @@
       });
       rememberDemandOptionConfig(demandOptionConfig, nextConfig, renames);
       demandOptionConfig = nextConfig;
-      persistDemandOptions(); closeDialog(); renderVisualDemands(); renderAssets($('#assetSearch')?.value.trim() || ''); toast('维度选项值已保存，存量显示已同步');
+      persistDemandOptions(); closeDialog(); renderVisualDemands(); renderAssets($('#assetSearch')?.value.trim() || ''); visualDemandRecordsManager?.render(); toast('维度选项值已保存，存量显示已同步');
     });
     const body = $('#dialogBody');
     const manager = $('.demand-option-manager', body);
@@ -4718,7 +4742,7 @@
       stableToken('expression', metadata.expression, '表达方式', '待选表达方式'),
       sellingPoint || (preview ? '待选主卖点' : ''),
       stableToken('scene', metadata.scene, '场景', '待选场景'),
-      `${assetProducerInitials(metadata.producer)}${yyyymmdd}` || (preview ? '待定制作人日期' : ''),
+      `${metadata.producerToken ?? assetProducerInitials(metadata.producer)}${yyyymmdd}` || (preview ? '待定制作人日期' : ''),
       requiredToken(metadata.version, '版本', '待填版本'),
       stableToken('materialCategory', metadata.materialCategory, '素材类型', '待选素材类型')
     ];
@@ -6606,6 +6630,40 @@
     document.body.classList.toggle('sidebar-collapsed');
     if (document.body.classList.contains('spec-panel-open')) applySpecEditorWidth();
   });
+  const sidebarNav = $('.sidebar');
+  const sidebarNavTooltip = $('#sidebarNavTooltip');
+  const hideSidebarNavTooltip = () => { sidebarNavTooltip.hidden = true; };
+  const showSidebarNavTooltip = event => {
+    const item = event.target.closest('.nav-display-only');
+    if (!item) return;
+    sidebarNavTooltip.textContent = item.dataset.tip;
+    sidebarNavTooltip.hidden = false;
+    const rect = item.getBoundingClientRect();
+    const halfHeight = sidebarNavTooltip.offsetHeight / 2;
+    sidebarNavTooltip.style.left = `${sidebarNav.getBoundingClientRect().right + 8}px`;
+    sidebarNavTooltip.style.top = `${Math.max(halfHeight + 8, Math.min(window.innerHeight - halfHeight - 8, rect.top + rect.height / 2))}px`;
+  };
+  sidebarNav.addEventListener('pointerover', showSidebarNavTooltip);
+  sidebarNav.addEventListener('focusin', showSidebarNavTooltip);
+  sidebarNav.addEventListener('pointerout', event => {
+    if (event.target.closest('.nav-display-only')?.contains(event.relatedTarget)) return;
+    hideSidebarNavTooltip();
+  });
+  sidebarNav.addEventListener('focusout', hideSidebarNavTooltip);
+  sidebarNav.addEventListener('wheel', event => {
+    if (event.ctrlKey || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+    const hoveredMenu = event.target.closest('.main-nav,.sidebar-editions');
+    const menus = [hoveredMenu, ...$$('.main-nav,.sidebar-editions', sidebarNav)];
+    const scrollableMenu = menus.find(menu => menu && menu.scrollHeight > menu.clientHeight + 1);
+    if (scrollableMenu) {
+      const delta = event.deltaY * (event.deltaMode === 1 ? 20 : event.deltaMode === 2 ? scrollableMenu.clientHeight : 1);
+      scrollableMenu.scrollTop += delta;
+    }
+    event.preventDefault();
+    hideSidebarNavTooltip();
+  }, { passive:false });
+  $$('.main-nav,.sidebar-editions', sidebarNav).forEach(menu => menu.addEventListener('scroll', hideSidebarNavTooltip, { passive:true }));
+  window.addEventListener('resize', hideSidebarNavTooltip);
   $('.workspace').addEventListener('scroll', syncSpecSidebarHorizontalScroll, { passive:true });
   window.addEventListener('scroll', syncBusinessDialogHorizontalScroll, { passive:true });
   $$('[data-prototype-mode]').forEach(button => button.addEventListener('click', () => setPrototypeMode(button.dataset.prototypeMode)));
@@ -7384,7 +7442,29 @@
   departmentManager = window.createDepartmentManagement({ openDialog, closeDialog, toast, escapeHtml, showView, users:platformUserDirectory, getUsers:()=>userManager?.getUsers() || platformUserDirectory, onChange:()=>userManager?.render(), refresh:scheduleEditableRefresh });
   userManager = window.createUserManagement({ openDialog, closeDialog, toast, escapeHtml, showView, users:platformUserDirectory, departments:departmentManager, refresh:scheduleEditableRefresh });
   menuManager = window.createMenuManagement({openDialog,closeDialog,toast,escapeHtml,showView,refresh:scheduleEditableRefresh});
-  observeBusinessTextLimits(); restoreDraft(); setAiEdition('phase1'); setCreationStage(1); renderWorkbench(); renderVisualDemands(); renderTasks(); renderAssets(); renderPrototypeLibrary(); renderTemplates(); renderTokenDetails(); updateNodeSummary(); updateVisualDemandSourceBanner(); $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); applyDesignState(); setPrototypeMode('experience'); observeDynamicDesignContent(); updateDesignSaveState(); updateSpecSaveState();
+  function advertisingOptionValue(field, value) {
+    const current = demandOptionByValue(field,value);
+    if (current) return current.id;
+    const previous = demandOptionHistoryByValue(field,value);
+    return previous ? demandOptionByValue(field,previous.targetId)?.id || '' : '';
+  }
+  function demandRecordMaterialNaming(demand, execution = {}, preview = false) {
+    const completionDate = execution.completionDate ?? demand.completionDate ?? '';
+    const row = ['', '', execution.materialType || demand.materialType || '', '', '', '', '', completionDate, {
+      spu:demand.spu, expression:demand.expression, mainSellingPoint:demand.mainSellingPoint,
+      scene:demand.scene, materialCategory:demand.materialCategory,
+      producer:execution.owner ?? demand.owner ?? '', producerToken:window.VisualDemandRecordsModel.usesPostNumber(demand.expression)?assetNamingToken(execution.owner ?? demand.owner ?? ''):undefined, completedAt:completionDate,
+      version:execution.version ?? demand.version ?? 'V1'
+    }];
+    const result = assetNamingState(row, preview);
+    const missing = [...result.missing];
+    if (window.VisualDemandRecordsModel.usesPostNumber(demand.expression) ? !row[8].producerToken : !assetProducerInitials(row[8].producer)) missing.push(window.VisualDemandRecordsModel.usesPostNumber(demand.expression)?'帖子编号':'制作人缩写');
+    if (!window.VisualDemandRecordsModel.dateValue(completionDate)) missing.push('完成日期');
+    return {name:missing.length && !preview ? '' : result.name, missing:[...new Set(missing)]};
+  }
+  visualDemandRecordsManager = window.createVisualDemandRecords({openDialog,closeDialog,toast,escapeHtml,currentUser:currentUserContext,users:platformUserDirectory,seedDemands:visualDemands,formMarkup:demandFormMarkup,readForm:readDemandForm,bindForm:bindDemandFormDependencies,optionLabel:demandOptionDisplayValue,materialNamingState:demandRecordMaterialNaming,adOptions:field=>demandOptionsFor(field).map(option=>({value:option.id,label:option.label})),adOptionValue:advertisingOptionValue,optionCode:normalizeDemandOptionSelection,producerInitials:assetProducerInitials,openOptions:openDemandOptionManager});
+  observeBusinessTextLimits(); restoreDraft(); setAiEdition('main'); setCreationStage(1); renderWorkbench(); renderVisualDemands(); renderTasks(); renderAssets(); renderPrototypeLibrary(); renderTemplates(); renderTokenDetails(); updateNodeSummary(); updateVisualDemandSourceBanner(); $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); applyDesignState(); setPrototypeMode('experience'); observeDynamicDesignContent(); updateDesignSaveState(); updateSpecSaveState();
+  showView('demandRecords');
   const openManagementRoute = () => {
     const route = {'#/permission/department':'departments','#/permission/user':'users','#/permission/menu':'menus'}[location.hash];
     if (!route) return;

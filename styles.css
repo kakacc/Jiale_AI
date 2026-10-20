@@ -788,10 +788,17 @@ body.spec-panel-open{overflow:hidden}
 #mainDialog.user-original-fullscreen[open]{display:flex;flex-direction:column;top:60px!important;left:0!important;right:0;width:100vw!important;max-width:none!important;height:calc(100dvh - 60px)!important;max-height:none!important;margin:0!important;transform:none!important;border-radius:0}
 .user-original-fullscreen .dialog-body{flex:1;max-height:none!important;min-height:0}
 
-/* 非本期的完整 AI素材菜单置于主导航末尾 */
-.ai-future-menu{height:56px}
-.ai-future-menu-label{display:flex;flex-direction:column;align-items:flex-start;gap:3px;line-height:18px}
-.ai-future-menu-label>small{font-size:11px;line-height:15px;color:#909399;white-space:nowrap}
+/* 本期仅用于展示的主导航菜单，保留悬浮及键盘聚焦提示。 */
+.sidebar>.brand,.sidebar>.sidebar-foot{flex-shrink:0}
+.main-nav{flex:1 1 auto;min-height:0;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-color:#c9cdd4 transparent}
+.sidebar-editions{flex:0 0 auto;min-height:100px;max-height:50%;padding:8px;border-top:1px solid #ebeef5;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-color:#c9cdd4 transparent}
+.sidebar>.sidebar-foot{margin-top:0}
+.nav-item.nav-display-only,.nav-item.nav-display-only>i{color:#b6bac2;cursor:not-allowed}
+.nav-item.nav-display-only{position:relative}
+.nav-item.nav-display-only:hover{background:transparent}
+.sidebar-nav-tooltip{position:fixed;z-index:80;transform:translateY(-50%);padding:8px 11px;border-radius:4px;white-space:nowrap;font-size:12px;line-height:1.5;font-weight:400;color:#fff;background:#303133;box-shadow:0 4px 12px rgba(0,0,0,.15);pointer-events:none}
+.sidebar-nav-tooltip[hidden]{display:none}
+.nav-display-only:focus-visible{outline:2px solid #c0c4cc;outline-offset:-2px}
 
 /* Original BI menu management layout and new AI button permission registrations. */
 .menu-management-layout{display:grid;grid-template-columns:285px minmax(0,1fr);margin:14px 24px 24px;min-height:calc(100vh - 195px);padding:12px;gap:18px;align-items:start}
