@@ -709,31 +709,41 @@
     { id:'TSK-STORE-0918', name:'新品开箱短视频精修', type:'视频', status:'storage', statusLabel:'待入库', progress:92, step:'全部节点已完成 · 待确认入库', updated:'09-17 16:08', updatedAt:'2026-09-17 16:08', nodes:['scene','detail'], current:1, org:'品牌中心 / 视觉设计部', requester:'张三', businessLine:'内容营销', action:'继续执行' }
   ];
 
+  const optionPairs = pairs => pairs.map(([id,label = id]) => ({id,label}));
+  const demandOptionCatalog = {
+    materialCategory:optionPairs([['UGC'],['ProductDisplay'],['ProductBenefits'],['ModelShowcase'],['Styling'],['Lifestyle'],['Promotion']]),
+    businessChannel:optionPairs([['DTC'],['AMZ'],['OTHER','其它']]),
+    productLevel:optionPairs([['NA','无'],['NEW','新品'],['POTENTIAL','潜力品'],['BESTSELLER','旺销'],['HERO','爆品']]),
+    demandSource:optionPairs([['MATERIALREQUEST','素材下需'],['DAILYPLAN','日常安排']]),
+    channelCategory:optionPairs([['PaidSocial','Paid Social'],['WEB'],['Email'],['PaidSearch','Paid Search'],['AMZ','拍摄协助'],['AMZ2','页面调性'],['OTH']]),
+    materialType:optionPairs([['IMG'],['VID'],['GIF']]),
+    expression:optionPairs([['ShootPD','实拍纯产品'],['AIPD','AI纯产品'],['TTS-UGC','TTS口播'],['IGUGC','IG原生口播'],['Sale','促销贴文'],['New','新品预告'],['ShootMP','实拍模拍'],['AIMP','AI模拍'],['Remix','混剪&拼接'],['Campaign','Campaign系列'],['Flow','Flow系列'],['UI','网站UI'],['MarketingTheme','营销主题'],['ModelRetouch','模特修图'],['AIUGC','AI-UGC口播']]),
+    mainSellingPoint:optionPairs([['NA','无'],['Soft','柔软'],['Breathable','透气'],['Cooling','冰感'],['Stretch','弹力'],['Premium','高级感'],['WrinkleFree','抗皱'],['MoistureWicking','吸湿排汗'],['QuickDrying','速干'],['ShapeRetaining','不变形'],['Home','家居'],['Sale','促销贴文'],['Waterproof','防水'],['Performance','高性能'],['Multipockets','多口袋'],['Antibacterial','抗菌'],['Liner','内衬']]),
+    scene:optionPairs([['NA','无'],['Outdoor','外景'],['Studio','棚拍'],['Indoor','室内搭景'],['Commute','通勤'],['Cafe','咖啡厅'],['Home','家居'],['Street','街拍'],['Business','商务'],['Gym','健身'],['Resort','度假']]),
+    secondarySellingPoint:optionPairs([['NA','无'],['SlimFit','修身'],['RelaxedFit','宽松'],['Durable','耐穿'],['Lightweight','轻便'],['Naturallinen','天然'],['Shaperetaining','不变形'],['Elasticwaistband','松紧腰'],['Drawstringwaist','抽绳设计'],['Versatile','百搭'],['Pocketdetails','口袋特点'],['Collardetails','领子特点'],['Cuffdetails','袖口特点'],['Hemdesign','下摆线条'],['Average','标准'],['Soft','柔软'],['Stretch','弹力']]),
+    bodyType:optionPairs([['NA','无'],['Plussize','肥胖'],['Athletic','肌肉'],['Average','标准'],['Slim','瘦弱']]),
+    priority:optionPairs([['P0'],['P1'],['P2']]),
+    adPage:optionPairs([['USpage'],['DEpage'],['Womenpage'],['DG'],['ESpage'],['SApage']]),
+    adMaterialSource:optionPairs([['VD'],['UGCtt'],['UGCig'],['PGC'],['PA']]),
+    campaignType:optionPairs([['PMax'],['DG'],['Search'],['Shopping'],['Display'],['Video']]),
+    sublevelType:optionPairs([['Feed','产品组'],['AG','素材资源组'],['IMG','图片'],['VID','视频']]),
+  };
   const defaultDemandOptionConfig = {
-    adPage:['USpage','DEpage','Womenpage','DG','ESpage','SApage'],
-    adMaterialSource:['VD','UGCtt','UGCig','PGC','PA'],
-    businessChannel:['DTC','AMZ','其它'],
-    channelCategory:['Paid Social','WEB','Email','Paid Search','AMZ拍摄协助','AMZ页面调性','OTH'],
-    productLevel:['无','新品','潜力品','旺销','爆品'],
-    demandSource:['素材下需','日常安排'],
-    materialType:['IMG','VID','GIF'],
-    expression:['Shoot-PD 实拍纯产品','AI-PD 纯产品','TTS UGC','IG UGC','Sale促销贴文','New新品预告','Shoot-MP 实拍模拍','AI-MP 模拍','Remix 混剪&拼接','Campaign系列','Flow系列','网站UI','营销主题','模特修图','AI-UGC口播'],
-    mainSellingPoint:['无','Soft 柔软','Breathable 透气','Cooling 冰感','Stretch 弹力','Premium 高级感','WrinkleFree 抗皱','Moisture-Wicking 吸湿排汗','Quick-Drying 速干','Shape-Retaining 不变形','Home 家居','Sale促销贴文','Waterproof 防水','Performance 高性能','Multi-pockets 多口袋','Antibacterial 抗菌','Liner 内衬'],
-    secondarySellingPoint:['无','Slim Fit 修身','Relaxed Fit 宽松','Durable 耐穿','Lightweight 轻便','Natural linen 天然','Shape-retaining 不变形','Elastic waistband 松紧腰','Drawstring waist 抽绳设计','Versatile 百搭','Pocket details 口袋特点','Collar details 领子特点','Cuff details 袖口特点','Hem design 下摆线条','Average（标准）','Soft 柔软','Stretch 弹力'],
-    scene:['无','Outdoor 外景','Studio 棚拍','Indoor 室内搭景','Commute 通勤','Cafe 咖啡厅','Home 家居','Street 街拍','Business 商务','Gym 健身','Resort 度假'],
-    bodyType:['无','Plus size（肥胖）','Athletic（肌肉）','Average（标准）','Slim（瘦弱）'],
-    requester:['沈玲燕','潘金兰','张三','李四','王五','赵六'],
-    priority:['P0','P1','P2'],
-    materialCategory:['UGC','ProductDisplay','ProductBenefits','ModelShowcase','Styling','Lifestyle','Promotion'],
+    ...demandOptionCatalog,
     scopes:{
-      channelCategory:{'Paid Social':['DTC'],'WEB':['DTC'],'Email':['DTC'],'Paid Search':['DTC'],'AMZ拍摄协助':['AMZ','其它'],'AMZ页面调性':['AMZ','其它'],'OTH':['DTC','AMZ','其它']},
-      materialType:{IMG:['DTC','AMZ','其它'],VID:['DTC','AMZ','其它'],GIF:['DTC']},
-      expression:Object.fromEntries(['Shoot-PD 实拍纯产品','AI-PD 纯产品','TTS UGC','IG UGC','Sale促销贴文','New新品预告','Shoot-MP 实拍模拍','AI-MP 模拍','Remix 混剪&拼接','Campaign系列','Flow系列','网站UI','营销主题','模特修图','AI-UGC口播'].map(value => [value,['DTC','AMZ','其它']]))
+      channelCategory:{PaidSocial:['DTC'],WEB:['DTC'],Email:['DTC'],PaidSearch:['DTC'],AMZ:['AMZ','OTHER'],AMZ2:['AMZ','OTHER'],OTH:['DTC','AMZ','OTHER']},
+      materialType:{IMG:['DTC','AMZ','OTHER'],VID:['DTC','AMZ','OTHER'],GIF:['DTC']},
+      expression:Object.fromEntries(demandOptionCatalog.expression.map(({id}) => [id,['DTC','AMZ','OTHER']]))
     }
   };
   const demandOptionFieldLabels = {
-    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型', adPage:'投放主页（广告）', adMaterialSource:'素材来源（广告）'
+    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型', adPage:'投放主页', adMaterialSource:'素材来源', campaignType:'广告系列类型', sublevelType:'子层级类型'
   };
+  const demandOptionModules = [
+    {key:'shared', label:'公共', fields:['materialCategory']},
+    {key:'demand', label:'视觉需求', fields:['businessChannel','productLevel','demandSource','channelCategory','materialType','expression','mainSellingPoint','scene','secondarySellingPoint','bodyType','priority']},
+    {key:'advertising', label:'广告命名', fields:['adPage','adMaterialSource','campaignType','sublevelType']}
+  ];
   const demandOptionIdentityOverrides = {
     'businessChannel:其它':{ id:'OTHER', label:'其它' },
     'productLevel:新品':{ id:'NEW', label:'新品' },
@@ -764,30 +774,26 @@
     'scene:无':{ id:'NONE', label:'无' },
     'bodyType:无':{ id:'NONE', label:'无' }
   };
-  const demandOptionSchemaVersion = '20260929-option-lifecycle-v5';
+  const demandOptionCatalogAliases = {
+    productLevel:{NONE:'NA','/':'NA'},
+    demandSource:{MATERIAL_REQUEST:'MATERIALREQUEST',DAILY_PLAN:'DAILYPLAN'},
+    channelCategory:{'Paid-Social':'PaidSocial','Paid-Search':'PaidSearch','AMZ拍摄协助':'AMZ','AMZ页面调性':'AMZ2',AMZ_2:'AMZ2'},
+    expression:{'Shoot-PD':'ShootPD','AI-PD':'AIPD','IG-UGC':'IGUGC','IG UGC':'IGUGC','TTS UGC':'TTS-UGC','Shoot-MP':'ShootMP','AI-MP':'AIMP','Marketing-Theme':'MarketingTheme','Model-Retouch':'ModelRetouch','AI-UGC':'AIUGC'},
+    mainSellingPoint:{NONE:'NA','Moisture-Wicking':'MoistureWicking','Quick-Drying':'QuickDrying','Shape-Retaining':'ShapeRetaining','Multi-pockets':'Multipockets'},
+    secondarySellingPoint:{NONE:'NA','Slim-Fit':'SlimFit','Relaxed-Fit':'RelaxedFit','Natural-linen':'Naturallinen','Shape-retaining':'Shaperetaining','Elastic-waistband':'Elasticwaistband','Drawstring-waist':'Drawstringwaist','Pocket-details':'Pocketdetails','Collar-details':'Collardetails','Cuff-details':'Cuffdetails','Hem-design':'Hemdesign'},
+    scene:{NONE:'NA'},
+    bodyType:{NONE:'NA','Plus-size':'Plussize','Plus size':'Plussize'},
+    campaignType:{'Performance-Max':'PMax','效果最大化':'PMax','搜索':'Search','购物':'Shopping','展示':'Display','视频':'Video'},
+    sublevelType:{'Asset-Group':'AG','素材组':'AG'}
+  };
+  const demandOptionSchemaVersion = '20261112-dimension-catalog-v37';
   const demandOptionSchemaVersionKey = 'ai-material-visual-demand-options-schema-version';
   const demandOptionHistoryKey = 'ai-material-visual-demand-option-history-v1';
   const storedDemandOptionConfig = loadStoredObject('ai-material-visual-demand-options-v1', defaultDemandOptionConfig);
   let demandOptionConfig = normalizeDemandOptionConfiguration({ ...JSON.parse(JSON.stringify(defaultDemandOptionConfig)), ...storedDemandOptionConfig, scopes:{...defaultDemandOptionConfig.scopes,...(storedDemandOptionConfig?.scopes || {})} });
-  if (localStorage.getItem(demandOptionSchemaVersionKey) !== demandOptionSchemaVersion) {
-    const defaultExpressionOptions = defaultDemandOptionConfig.expression.map((value,index) => normalizeDemandOption('expression', value, index));
-    const existingExpressionById = new Map((demandOptionConfig.expression || []).map(option => [option.id.toLowerCase(), option]));
-    demandOptionConfig.expression = [
-      ...defaultExpressionOptions.map(option => ({ ...option, ...(existingExpressionById.get(option.id.toLowerCase()) || {}), label:option.label })),
-      ...(demandOptionConfig.expression || []).filter(option => !defaultExpressionOptions.some(defaultOption => defaultOption.id.toLowerCase() === option.id.toLowerCase()))
-    ];
-    const defaultProductLevelOptions = defaultDemandOptionConfig.productLevel.map((value,index) => normalizeDemandOption('productLevel', value, index));
-    const existingProductLevelById = new Map((demandOptionConfig.productLevel || []).map(option => [option.id.toLowerCase(), option]));
-    demandOptionConfig.productLevel = [
-      ...defaultProductLevelOptions.map(option => ({ ...option, ...(existingProductLevelById.get(option.id.toLowerCase()) || {}), label:option.label })),
-      ...(demandOptionConfig.productLevel || []).filter(option => !defaultProductLevelOptions.some(defaultOption => defaultOption.id.toLowerCase() === option.id.toLowerCase()))
-    ];
-    demandOptionConfig.scopes = normalizeDemandOptionScopes({ ...defaultDemandOptionConfig.scopes, ...(demandOptionConfig.scopes || {}) }, demandOptionConfig);
-    localStorage.setItem('ai-material-visual-demand-options-v1', JSON.stringify(demandOptionConfig));
-    localStorage.setItem(demandOptionSchemaVersionKey, demandOptionSchemaVersion);
-  }
   let demandOptionHistory = normalizeDemandOptionHistory(loadStoredObject(demandOptionHistoryKey, {}));
-  rememberDemandOptionConfig({}, demandOptionConfig);
+  if (localStorage.getItem(demandOptionSchemaVersionKey) !== demandOptionSchemaVersion) applyDemandOptionCatalog();
+  else rememberDemandOptionConfig({}, demandOptionConfig);
   if (localStorage.getItem('ai-material-ad-dimensions-schema-v1') !== '20261019-v11') {
     persistDemandOptions();
     localStorage.setItem('ai-material-ad-dimensions-schema-v1','20261019-v11');
@@ -3816,12 +3822,39 @@
     normalized.scopes = normalizeDemandOptionScopes(config.scopes || {}, normalized);
     return normalized;
   }
+  function applyDemandOptionCatalog() {
+    const previous = demandOptionConfig;
+    const next = normalizeDemandOptionConfiguration(defaultDemandOptionConfig);
+    const renames = Object.fromEntries(Object.keys(demandOptionCatalog).map(field => [field,{...demandOptionCatalogAliases[field]}]));
+    Object.keys(demandOptionCatalog).forEach(field => {
+      const aliases = renames[field];
+      for (const option of previous[field] || []) {
+        const match = findDemandOptionInList(next[field], aliases[option.id] || option.id) || findDemandOptionInList(next[field], option.label);
+        if (!match) continue;
+        for (const value of [option.id,option.label,option.legacy]) {
+          if (value && value !== match.id && value !== match.label) aliases[value] = match.id;
+        }
+      }
+    });
+    for (const [field,scopes] of Object.entries(previous.scopes || {})) {
+      for (const [value,channels] of Object.entries(scopes)) {
+        const option = findDemandOptionInList(next[field], renames[field]?.[value] || value);
+        if (option) (next.scopes[field] ||= {})[option.id] = channels;
+      }
+    }
+    rememberDemandOptionConfig(previous, next, renames);
+    demandOptionConfig = next;
+    persistDemandOptions();
+  }
   function demandOptionByValue(field, value) {
     return findDemandOptionInList(demandOptionConfig[field] || [], value);
   }
+  function currentDemandOption(field, value) {
+    return demandOptionByValue(field,value) || demandOptionByValue(field,demandOptionHistoryByValue(field,value)?.targetId);
+  }
   function normalizeDemandOptionSelection(field, value) {
     const raw = String(value ?? '').trim();
-    return demandOptionByValue(field, raw)?.id || raw;
+    return currentDemandOption(field, raw)?.id || raw;
   }
   function normalizeDemandOptionSelectionList(field, value) {
     return String(value || '').split(/[,，、]+/).map(item => normalizeDemandOptionSelection(field, item)).filter(Boolean).join('、');
@@ -3852,8 +3885,7 @@
   }
   function demandOptionMarkup(field, selected = '', businessChannel = '', includeAll = false) {
     const available = demandOptionsFor(field, businessChannel);
-    const selectedOption = findDemandOptionInList(available, selected);
-    const selectedId = selectedOption?.id || '';
+    const selectedId = normalizeDemandOptionSelection(field, selected);
     return `${includeAll ? '<option value="">全部</option>' : '<option value="">请选择</option>'}${available.map(option => `<option value="${escapeHtml(option.id)}"${option.id === selectedId ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}`;
   }
   function demandFieldHelpMarkup(copy) {
@@ -3943,9 +3975,9 @@
   function demandFormMarkup(item = {}, settings = {}) {
     const isNew = !item.id;
     const business = item.businessChannel || (isNew ? 'DTC' : '');
-    const productLevel = item.productLevel || (isNew ? 'NONE' : '');
-    const demandSource = item.demandSource || (isNew ? 'MATERIAL_REQUEST' : '');
-    const channelCategory = item.channelCategory || (isNew ? 'Paid-Social' : '');
+    const productLevel = item.productLevel || (isNew ? 'NA' : '');
+    const demandSource = item.demandSource || (isNew ? 'MATERIALREQUEST' : '');
+    const channelCategory = item.channelCategory || (isNew ? 'PaidSocial' : '');
     const requester = Object.prototype.hasOwnProperty.call(item,'requester') ? item.requester : currentUserContext.name;
     const owner = item.owner || '';
     return `<form class="visual-demand-form dialog-wide-content" id="visualDemandForm" novalidate>
@@ -4190,7 +4222,14 @@
     Object.keys(demandOptionFieldLabels).forEach(field => {
       (workingConfig[field] || []).forEach(option => { option._originId = option.id; });
     });
-    let activeField = Object.keys(demandOptionFieldLabels)[0];
+    let activeModule = demandOptionModules[0];
+    const selectedDimensions = Object.fromEntries(demandOptionModules.map(module => [module.key,module.fields[0]]));
+    let activeField = selectedDimensions[activeModule.key];
+    const selectDimension = field => {
+      activeModule = demandOptionModules.find(module => module.fields.includes(field));
+      activeField = field;
+      selectedDimensions[activeModule.key] = field;
+    };
     const identifierPattern = /^(?=.*[A-Za-z0-9])[A-Za-z0-9-]+$/;
     const validateField = field => {
       const values = workingConfig[field] || [];
@@ -4218,11 +4257,12 @@
       }
       return null;
     };
-    openDialog('配置维度选项值','删除仅影响后续新建与编辑下拉；修改会同步更新已有视觉需求和素材的显示',`<div class="demand-option-manager dialog-wide-content"><div class="demand-option-layout"><aside class="demand-option-dimensions"><div><span>维度</span><b>选择需配置的维度</b></div><div id="demandOptionDimensions"></div><p>新增选项默认对全部业务渠道可用。</p></aside><section class="demand-option-values-panel"><div class="demand-option-values-head"><div><span>维度选项值</span><b id="demandOptionActiveLabel"></b></div><small>删除保留存量显示；修改按稳定标识同步已有数据展示</small></div><div id="demandOptionItems"></div><div class="demand-option-add"><input id="newDemandOptionIdentifier" maxlength="64" pattern="[A-Za-z0-9-]+" title="仅支持英文字母、数字和连字符" placeholder="英文标识，如 Campaign"><input id="newDemandOptionLabel" maxlength="40" placeholder="中文显示，如 Campaign系列"><button class="button secondary" type="button" id="addDemandOption">新增选项值</button></div></section></div></div>`,'保存配置',() => {
+    const tabs = demandOptionModules.map(module => `<button id="demandOptionTab-${module.key}" type="button" role="tab" data-demand-option-module="${module.key}" aria-controls="demandOptionModulePanel">${module.label}</button>`).join('');
+    openDialog('配置维度选项值','删除选项后保留已有记录的显示，修改会同步到相关模块。',`<div class="demand-option-manager dialog-wide-content"><div class="demand-option-tabs" role="tablist" aria-label="维度所属模块">${tabs}</div><div id="demandOptionModulePanel" class="demand-option-layout" role="tabpanel"><aside class="demand-option-dimensions"><div><span>维度</span><b>选择需配置的维度</b></div><div id="demandOptionDimensions"></div><p id="demandOptionScopeNote">新增选项默认对全部业务渠道可用。</p></aside><section class="demand-option-values-panel"><div class="demand-option-values-head"><div><span>维度选项值</span><b id="demandOptionActiveLabel"></b></div></div><div id="demandOptionItems"></div><div class="demand-option-add"><input id="newDemandOptionIdentifier" maxlength="64" pattern="[A-Za-z0-9-]+" title="仅支持英文字母、数字和连字符" placeholder="英文标识，如 Campaign"><input id="newDemandOptionLabel" maxlength="40" placeholder="中文显示，如 Campaign系列"><button class="button secondary" type="button" id="addDemandOption">新增选项值</button></div></section></div></div>`,'保存配置',() => {
       $$('[data-demand-option-identifier-index]', manager).forEach(input => { const option = workingConfig[activeField]?.[Number(input.dataset.demandOptionIdentifierIndex)]; if (option) option.id = input.value.trim(); });
       $$('[data-demand-option-label-index]', manager).forEach(input => { const option = workingConfig[activeField]?.[Number(input.dataset.demandOptionLabelIndex)]; if (option) option.label = input.value.trim(); });
       const invalid = validateWorkingConfig();
-      if (invalid) { activeField = invalid.field; renderAll(); toast(invalid.message, 'warning'); return; }
+      if (invalid) { selectDimension(invalid.field); renderAll(); toast(invalid.message, 'warning'); return; }
       const nextConfig = normalizeDemandOptionConfiguration(workingConfig);
       const renames = {};
       Object.keys(demandOptionFieldLabels).forEach(field => {
@@ -4237,8 +4277,16 @@
     });
     const body = $('#dialogBody');
     const manager = $('.demand-option-manager', body);
+    const tabButtons = $$('[data-demand-option-module]', manager);
     const renderDimensions = () => {
-      $('#demandOptionDimensions').innerHTML = Object.entries(demandOptionFieldLabels).map(([field,label]) => `<button type="button" class="demand-option-dimension${field === activeField ? ' active' : ''}" data-demand-option-field="${escapeHtml(field)}"><span>${escapeHtml(label)}</span><small>${(workingConfig[field] || []).length} 项</small></button>`).join('');
+      tabButtons.forEach(button => {
+        const selected = button.dataset.demandOptionModule === activeModule.key;
+        button.setAttribute('aria-selected', String(selected));
+        button.tabIndex = selected ? 0 : -1;
+      });
+      $('#demandOptionModulePanel').setAttribute('aria-labelledby', `demandOptionTab-${activeModule.key}`);
+      $('#demandOptionScopeNote').hidden = activeModule.key === 'advertising';
+      $('#demandOptionDimensions').innerHTML = activeModule.fields.map(field => `<button type="button" class="demand-option-dimension${field === activeField ? ' active' : ''}" data-demand-option-field="${escapeHtml(field)}"><span>${escapeHtml(demandOptionFieldLabels[field])}</span><small>${(workingConfig[field] || []).length} 项</small></button>`).join('');
     };
     const renderItems = () => {
       const values = workingConfig[activeField] || [];
@@ -4275,9 +4323,18 @@
       handleOptionEdit(event);
     });
     manager.addEventListener('change', handleOptionEdit);
+    manager.addEventListener('keydown', event => {
+      const index = tabButtons.indexOf(event.target);
+      if (index < 0) return;
+      const next = {ArrowLeft:(index + tabButtons.length - 1) % tabButtons.length,ArrowRight:(index + 1) % tabButtons.length,Home:0,End:tabButtons.length - 1}[event.key];
+      if (next === undefined) return;
+      event.preventDefault(); tabButtons[next].click(); tabButtons[next].focus();
+    });
     manager.addEventListener('click', event => {
+      const moduleButton = event.target.closest('[data-demand-option-module]');
+      if (moduleButton) { selectDimension(selectedDimensions[moduleButton.dataset.demandOptionModule]); renderAll(); return; }
       const dimensionButton = event.target.closest('[data-demand-option-field]');
-      if (dimensionButton) { activeField = dimensionButton.dataset.demandOptionField; renderAll(); return; }
+      if (dimensionButton) { selectDimension(dimensionButton.dataset.demandOptionField); renderAll(); return; }
       if (event.target.closest('#addDemandOption')) {
         const identifierInput = $('#newDemandOptionIdentifier');
         const labelInput = $('#newDemandOptionLabel');
@@ -4303,10 +4360,10 @@
     select.value = value;
   }
   function suggestedNodesForDemand(item) {
-    const expression = normalizeDemandOptionSelection('expression', item.expression || '');
-    if (/^(AI-PD|Shoot-PD|UI)$/.test(expression)) return ['clean','detail'];
-    if (/^(AI-MP|Shoot-MP|TTS-UGC|IG-UGC|Sale|New|Campaign|Flow|Marketing-Theme|AI-UGC)$/.test(expression)) return ['scene','detail'];
-    if (/^(Remix|Model-Retouch)$/.test(expression)) return ['detail'];
+    const expression = normalizeDemandOptionSelection('expression', item.expression || '').replaceAll('-','');
+    if (/^(AIPD|ShootPD|UI)$/.test(expression)) return ['clean','detail'];
+    if (/^(AIMP|ShootMP|TTSUGC|IGUGC|Sale|New|Campaign|Flow|MarketingTheme|AIUGC)$/.test(expression)) return ['scene','detail'];
+    if (/^(Remix|ModelRetouch)$/.test(expression)) return ['detail'];
     return item.materialType === 'VID' ? ['scene','detail'] : ['clean','scene','detail'];
   }
   function updateVisualDemandSourceBanner() {
@@ -4701,7 +4758,7 @@
     return demandOptionsFor(field).map(option => option.id);
   }
   function assetNoneOptionValue(field) {
-    return demandOptionsFor(field).find(option => String(option.id).toLowerCase() === 'none' || option.label === '无')?.id || '';
+    return demandOptionsFor(field).find(option => ['na','none'].includes(option.id.toLowerCase()) || option.label === '无')?.id || '';
   }
   function assetEditorSelectMarkup(field, selectedValue = '', required = false) {
     const selected = normalizeDemandOptionSelection(field, selectedValue);
@@ -4724,36 +4781,49 @@
     if (!latinWords) return '';
     return (latinWords.length > 1 ? latinWords.map(word => word[0]).join('') : latinWords[0].slice(0,3)).toUpperCase();
   }
-  function assetNamingState(row, preview = false) {
+  function namingPreviewMarkup({name,previewGroups}) {
+    if (!previewGroups) return escapeHtml(name || '');
+    return previewGroups.map(group => {
+      const separator = group.every(([value]) => value) ? '' : '_';
+      return group.map(([value,label]) => value ? escapeHtml(value) : `<span class="naming-preview-missing">[缺失${escapeHtml(label)}]</span>`).join(separator);
+    }).join('_');
+  }
+  function assetNamingState(row, {producerLabel = '制作人', dateLabel = '入库时间', requireProductionInfo = false} = {}) {
     const metadata = row?.[8] || {};
     const missing = [];
-    const requiredToken = (value, label, placeholder) => {
+    const requiredToken = (value, label) => {
       const token = assetNamingToken(value);
       if (!token) missing.push(label);
-      return token || (preview ? placeholder : '');
+      return [token,label];
     };
-    const stableToken = (field, value, label, placeholder) => requiredToken(normalizeDemandOptionSelection(field, value), label, placeholder);
-    const sellingPoint = assetMetadataValues(metadata.mainSellingPoint).map(value => assetNamingToken(normalizeDemandOptionSelection('mainSellingPoint', value))).filter(Boolean).join('&') || assetNamingToken(assetNoneOptionValue('mainSellingPoint'));
-    const date = String(metadata.completedAt || row?.[7] || '').match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    const stableToken = (field, value, label) => requiredToken(normalizeDemandOptionSelection(field, value), label);
+    const sellingPoint = assetMetadataValues(metadata.mainSellingPoint).map(value => assetNamingToken(normalizeDemandOptionSelection('mainSellingPoint', value))).filter(Boolean).join('&');
+    const producer = metadata.producerToken ?? assetProducerInitials(metadata.producer);
+    const dateInput = metadata.completedAt || row?.[7] || '';
+    const validDate = !requireProductionInfo || window.VisualDemandRecordsModel.dateValue(dateInput);
+    const date = validDate ? String(dateInput).match(/(\d{4})-(\d{1,2})-(\d{1,2})/) : null;
     const yyyymmdd = date ? `${date[1]}${date[2].padStart(2,'0')}${date[3].padStart(2,'0')}` : '';
-    const tokens = [
-      requiredToken(metadata.spu, 'SPU', '待填SPU'),
-      stableToken('materialType', row?.[2] === '视频' ? 'VID' : row?.[2] === '图片' ? 'IMG' : row?.[2], '素材格式', '待选素材格式'),
-      stableToken('expression', metadata.expression, '表达方式', '待选表达方式'),
-      sellingPoint || (preview ? '待选主卖点' : ''),
-      stableToken('scene', metadata.scene, '场景', '待选场景'),
-      `${metadata.producerToken ?? assetProducerInitials(metadata.producer)}${yyyymmdd}` || (preview ? '待定制作人日期' : ''),
-      requiredToken(metadata.version, '版本', '待填版本'),
-      stableToken('materialCategory', metadata.materialCategory, '素材类型', '待选素材类型')
+    const previewGroups = [
+      [requiredToken(metadata.spu, 'SPU')],
+      [stableToken('materialType', row?.[2] === '视频' ? 'VID' : row?.[2] === '图片' ? 'IMG' : row?.[2], '素材格式')],
+      [stableToken('expression', metadata.expression, '表达方式')],
+      [[sellingPoint,'主卖点',assetNamingToken(assetNoneOptionValue('mainSellingPoint'))]],
+      [stableToken('scene', metadata.scene, '场景')],
+      [[producer,producerLabel],[yyyymmdd,dateLabel]],
+      [requiredToken(metadata.version, '版本')],
+      [stableToken('materialCategory', metadata.materialCategory, '素材类型')]
     ];
-    return { name: missing.length && !preview ? '' : tokens.join('_'), missing };
+    if (requireProductionInfo && !producer) missing.push(producerLabel);
+    if (!validDate) missing.push(dateLabel);
+    const tokens = previewGroups.map(group => group.map(([value,,fallback]) => value || fallback || '').join(''));
+    return { name:missing.length ? '' : tokens.join('_'), missing, previewGroups };
   }
   function buildAssetNaming(row) {
     return assetNamingState(row).name;
   }
   function assetDetailBody(row) {
     const metadata = row[8] || {};
-    const naming = buildAssetNaming(row);
+    const naming = assetNamingState(row);
     const { sourceTask, sourceNode } = assetSourceParts(row);
     const demand = visualDemands.find(item => item.id === metadata.visualDemandId);
     const task = tasks.find(item => item[7]?.id === metadata.taskId);
@@ -4778,7 +4848,7 @@
         <div class="detail-field"><span>辅助卖点</span><b>${escapeHtml(demandOptionDisplayList('secondarySellingPoint',metadata.secondarySellingPoint) || '未填写')}</b></div><div class="detail-field"><span>场景</span><b>${escapeHtml(demandOptionDisplayValue('scene',metadata.scene) || '未填写')}</b></div>
         <div class="detail-field"><span>版本</span><b>${escapeHtml(metadata.version || '未填写')}</b></div>
         <div class="detail-field"><span>标签</span><b>${assetTagMarkup(row, '暂无标签')}</b></div>
-        <div class="detail-field detail-field-wide"><span>素材命名</span><div class="asset-naming-value"><b>${escapeHtml(naming || '待补全素材信息后生成')}</b><button class="table-link asset-naming-copy" type="button" ${naming ? '' : 'disabled'}>复制</button></div></div>
+        <div class="detail-field detail-field-wide"><span>素材命名</span><div class="asset-naming-value"><b>${naming.name ? escapeHtml(naming.name) : namingPreviewMarkup(naming)}</b><button class="table-link asset-naming-copy" type="button" ${naming.name ? '' : 'disabled'}>复制</button></div></div>
       </div></section>
       <section class="detail-section"><h3 class="detail-section-title">下载</h3><div class="detail-fields"><div class="detail-field detail-field-wide"><span>当前素材</span><div class="detail-download-action"><button class="button primary asset-download-direct" type="button" ${expired ? 'disabled' : ''}>下载素材</button><small>${expired ? '已过期，服务器文件已清理，无法下载' : metadata.downloadUrl ? '点击下载当前素材的原文件' : '演示素材暂无原文件，接入文件服务后可下载'}</small><small class="detail-download-feedback" role="status" hidden></small></div></div></div></section>
     </div>`;
@@ -4811,7 +4881,7 @@
     const secondarySellingPoint = metadata.secondarySellingPoint || assetNoneOptionValue('secondarySellingPoint');
     const scene = metadata.scene || '';
     const materialCategory = metadata.materialCategory || '';
-    const initialNaming = assetNamingState([...row.slice(0,8), { ...metadata, expression, mainSellingPoint, secondarySellingPoint, scene, materialCategory, version:metadata.version || 'V1' }], true);
+    const initialNaming = assetNamingState([...row.slice(0,8), { ...metadata, expression, mainSellingPoint, secondarySellingPoint, scene, materialCategory, version:metadata.version || 'V1' }]);
     const body = `<div class="asset-info-editor dialog-wide-content"><div class="asset-info-context"><b>素材 ID：${escapeHtml(row[1])}</b><span>素材格式：${escapeHtml(row[2])}</span></div><div class="asset-info-fields">
       <label><span class="asset-info-label">SPU <em class="required-mark">*</em></span><input data-asset-info="spu" value="${escapeHtml(metadata.spu || '')}" placeholder="例如 FI-WSH26141" maxlength="200" required aria-required="true"></label>
       <label><span class="asset-info-label">表达方式 <em class="required-mark">*</em></span>${assetEditorSelectMarkup('expression', expression, true)}</label>
@@ -4820,7 +4890,7 @@
       <label><span class="asset-info-label">场景 <em class="required-mark">*</em></span>${assetEditorSelectMarkup('scene', scene, true)}</label>
       <label><span class="asset-info-label">版本 <em class="required-mark">*</em></span><input data-asset-info="version" value="${escapeHtml(metadata.version || 'V1')}" placeholder="同一 SPU 的自定义版本" maxlength="80" required aria-required="true"></label>
       <label><span class="asset-info-label">素材类型 <em class="required-mark">*</em></span>${assetEditorSelectMarkup('materialCategory', materialCategory, true)}</label>
-    </div><div class="asset-naming-preview"><div><span>素材命名（按视觉需求表规则自动生成）</span><button class="table-link asset-info-naming-copy" type="button">复制</button></div><b id="assetNamingPreview">${escapeHtml(initialNaming.name)}</b><small id="assetNamingMissingHint" class="asset-naming-missing-hint${initialNaming.missing.length ? '' : ' complete'}">${escapeHtml(initialNaming.missing.length ? `请补充：${initialNaming.missing.join('、')}` : '命名信息已完整，将随上方内容即时更新')}</small></div></div>`;
+    </div><div class="asset-naming-preview"><div><span>素材命名（按视觉需求表规则自动生成）</span><button class="table-link asset-info-naming-copy" type="button">复制</button></div><b id="assetNamingPreview" data-runtime-copy>${namingPreviewMarkup(initialNaming)}</b></div></div>`;
     const readDraft = () => {
       const next = { ...row[8] };
       $$('[data-asset-info]', $('#dialogBody')).forEach(control => { next[control.dataset.assetInfo] = control.value.trim(); });
@@ -4838,13 +4908,11 @@
     };
     const updateNamingPreview = () => {
       syncMultiSummaries();
-      const state = assetNamingState([...row.slice(0,8),readDraft()], true);
-      $('#assetNamingPreview').textContent = state.name;
-      const hint = $('#assetNamingMissingHint');
-      hint.textContent = state.missing.length ? `请补充：${state.missing.join('、')}` : '命名信息已完整，将随上方内容即时更新';
-      hint.classList.toggle('complete', !state.missing.length);
-      $('.asset-info-naming-copy', $('#dialogBody')).disabled = Boolean(state.missing.length);
-      return state.missing.length ? '' : state.name;
+      const state = assetNamingState([...row.slice(0,8),readDraft()]);
+      $('#assetNamingPreview').innerHTML = namingPreviewMarkup(state);
+      const complete = state.previewGroups.every(group => group.every(([value]) => value));
+      $('.asset-info-naming-copy', $('#dialogBody')).disabled = !complete;
+      return complete ? state.name : '';
     };
     openDialog('编辑素材信息', row[1], body, '保存修改', () => {
       const next = readDraft();
@@ -7443,26 +7511,21 @@
   userManager = window.createUserManagement({ openDialog, closeDialog, toast, escapeHtml, showView, users:platformUserDirectory, departments:departmentManager, refresh:scheduleEditableRefresh });
   menuManager = window.createMenuManagement({openDialog,closeDialog,toast,escapeHtml,showView,refresh:scheduleEditableRefresh});
   function advertisingOptionValue(field, value) {
-    const current = demandOptionByValue(field,value);
-    if (current) return current.id;
-    const previous = demandOptionHistoryByValue(field,value);
-    return previous ? demandOptionByValue(field,previous.targetId)?.id || '' : '';
+    return currentDemandOption(field,value)?.id || '';
   }
-  function demandRecordMaterialNaming(demand, execution = {}, preview = false) {
+  function demandRecordMaterialNaming(demand, execution = {}) {
     const completionDate = execution.completionDate ?? demand.completionDate ?? '';
+    const usesPostNumber = window.VisualDemandRecordsModel.usesPostNumber(demand.expression);
+    const producer = execution.owner ?? demand.owner ?? '';
     const row = ['', '', execution.materialType || demand.materialType || '', '', '', '', '', completionDate, {
       spu:demand.spu, expression:demand.expression, mainSellingPoint:demand.mainSellingPoint,
       scene:demand.scene, materialCategory:demand.materialCategory,
-      producer:execution.owner ?? demand.owner ?? '', producerToken:window.VisualDemandRecordsModel.usesPostNumber(demand.expression)?assetNamingToken(execution.owner ?? demand.owner ?? ''):undefined, completedAt:completionDate,
+      producer, producerToken:usesPostNumber ? assetNamingToken(producer) : undefined, completedAt:completionDate,
       version:execution.version ?? demand.version ?? 'V1'
     }];
-    const result = assetNamingState(row, preview);
-    const missing = [...result.missing];
-    if (window.VisualDemandRecordsModel.usesPostNumber(demand.expression) ? !row[8].producerToken : !assetProducerInitials(row[8].producer)) missing.push(window.VisualDemandRecordsModel.usesPostNumber(demand.expression)?'帖子编号':'制作人缩写');
-    if (!window.VisualDemandRecordsModel.dateValue(completionDate)) missing.push('完成日期');
-    return {name:missing.length && !preview ? '' : result.name, missing:[...new Set(missing)]};
+    return assetNamingState(row,{producerLabel:usesPostNumber?'帖子编号':'制作人',dateLabel:'完成日期',requireProductionInfo:true});
   }
-  visualDemandRecordsManager = window.createVisualDemandRecords({openDialog,closeDialog,toast,escapeHtml,currentUser:currentUserContext,users:platformUserDirectory,seedDemands:visualDemands,formMarkup:demandFormMarkup,readForm:readDemandForm,bindForm:bindDemandFormDependencies,optionLabel:demandOptionDisplayValue,materialNamingState:demandRecordMaterialNaming,adOptions:field=>demandOptionsFor(field).map(option=>({value:option.id,label:option.label})),adOptionValue:advertisingOptionValue,optionCode:normalizeDemandOptionSelection,producerInitials:assetProducerInitials,openOptions:openDemandOptionManager});
+  visualDemandRecordsManager = window.createVisualDemandRecords({openDialog,closeDialog,toast,escapeHtml,currentUser:currentUserContext,users:platformUserDirectory,seedDemands:visualDemands,formMarkup:demandFormMarkup,readForm:readDemandForm,bindForm:bindDemandFormDependencies,optionLabel:demandOptionDisplayValue,materialNamingState:demandRecordMaterialNaming,namingPreviewMarkup,adOptions:field=>demandOptionsFor(field).map(option=>({value:option.id,label:option.label})),adOptionValue:advertisingOptionValue,optionCode:normalizeDemandOptionSelection,producerInitials:assetProducerInitials,openOptions:openDemandOptionManager});
   observeBusinessTextLimits(); restoreDraft(); setAiEdition('main'); setCreationStage(1); renderWorkbench(); renderVisualDemands(); renderTasks(); renderAssets(); renderPrototypeLibrary(); renderTemplates(); renderTokenDetails(); updateNodeSummary(); updateVisualDemandSourceBanner(); $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); applyDesignState(); setPrototypeMode('experience'); observeDynamicDesignContent(); updateDesignSaveState(); updateSpecSaveState();
   showView('demandRecords');
   const openManagementRoute = () => {

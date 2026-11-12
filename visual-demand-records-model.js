@@ -66,7 +66,7 @@
   function generateMaterialAddress({completionDate,businessChannel='',channelCategory='',producer='',spu=''}) {
     const date=dateValue(completionDate);if(!date)return '';
     const business=String(businessChannel)==='OTHER'?'其它':String(businessChannel);
-    const channel=({'Paid-Social':'Paid Social','Paid-Search':'Paid Search'})[channelCategory]||String(channelCategory);
+    const channel=({'Paid-Social':'Paid Social',PaidSocial:'Paid Social','Paid-Search':'Paid Search',PaidSearch:'Paid Search'})[channelCategory]||String(channelCategory);
     const other=business.includes('其它'),group=other?'其它':business.includes('AMZ')?'AMZ':'DTC';
     const folder=[['Paid Social','FB推广'],['Paid Search','谷歌推广'],['Email','EDM'],['WEB','站内'],['OTH','其他']].find(([text])=>channel.includes(text))?.[1]||channel.replaceAll(' ','');
     const parts=[String(Number(date.slice(0,4))),...(!other?[folder]:[]),Number(date.slice(5,7))+'月',String(producer),String(spu)];
@@ -97,13 +97,14 @@
     if(filters.priority&&!['P0','P1','P2'].includes(filters.priority))throw new Error('优先级筛选无效，请重新选择。');
     return filters;
   }
-  function demandMatchesFilters(demand,input) {
+  function demandMatchesFilters(demand,input,optionCode=(_field,value)=>value) {
     const f=normalizeDemandFilters(input);
     if(demand.deletedAt)return false;
     if(f.submissionState&&(demand.submissionState==='draft'?'draft':'submitted')!==f.submissionState)return false;
     if(f.status&&demand.submissionState==='draft')return false;
     return [['demandId','id'],['title','title'],['spu','spu']].every(([key,field])=>!f[key]||String(demand[field]||'').toLowerCase().includes(f[key].toLowerCase()))&&
-      ['demandType','status','priority','owner','requester','productLevel','channelCategory','demandSource'].every(key=>!f[key]||demand[key]===f[key])&&
+      ['demandType','status','priority','owner','requester'].every(key=>!f[key]||demand[key]===f[key])&&
+      ['productLevel','channelCategory','demandSource'].every(key=>!f[key]||optionCode(key,demand[key])===optionCode(key,f[key]))&&
       [['request','requestDate'],['ddl','ddl']].every(([prefix,field])=>{const date=dateValue(demand[field]);return (!f[prefix+'Start']||(date&&date>=f[prefix+'Start']))&&(!f[prefix+'End']||(date&&date<=f[prefix+'End']));});
   }
   function filterStorageKey(userId) {if(!userId||typeof userId!=='string')throw new Error('缺少登录人员标识，暂时无法保存筛选。');return 'ai-visual-demand-filters-v1:'+encodeURIComponent(userId);}
@@ -277,14 +278,77 @@
     const date=d.completionDate||'';
     return {name:d.executionMaterialName??material?.name??'',url:Object.prototype.hasOwnProperty.call(d,'executionUrl')?d.executionUrl:material?.url||'',version:d.version||'',owner:Object.prototype.hasOwnProperty.call(d,'executionOwner')?d.executionOwner:d.owner||'',completionDate:date,productionDays:typeof d.productionDays==='number'?d.productionDays:productionDays(d.requestDate,date)};
   }
-  const advertisingPlatforms=['Facebook','Google'];
-  // Prototype account labels; no connection to an advertising platform.
-  const advertisingAccounts=[{value:'ACC-META-US',label:'Meta 美国主账户'},{value:'ACC-META-EU',label:'Meta 欧洲账户'},{value:'ACC-GOOGLE-US',label:'Google 美国账户'}];
+  const META_ADS='Meta Ads', GOOGLE_ADS='Google Ads';
+  const advertisingPlatforms=[META_ADS,GOOGLE_ADS];
+  const googleAdvertisingNameRuleVersion='google-v40';
+  const googleAdvertisingFields={campaignType:'广告系列类型',sublevelType:'子层级类型',spu:'SPU',materialCategory:'素材类型',materialVersion:'素材版本'};
+  function googleAdFieldValues(value) {
+    const values=Array.isArray(value)?value:[value];
+    return [...new Set(values.filter(item=>typeof item==='string').map(item=>item.trim()).filter(Boolean))];
+  }
+  const advertisingAccounts=[
+    {value:'1141062532205649',label:'女装-FIOBOC-WM-261008-1'},
+    {value:'3488992931278762',label:'阿语-FIOBOC-SA-261008-1'},
+    {value:'1594112304332497',label:'男装-FIOBOC-2023.04.18'},
+    {value:'796787292349079',label:'男装-FIOBOC-24.08.26-10'},
+    {value:'1226736702916066',label:'女装-FIOBOC-26.03.06-19'},
+    {value:'1177093920096050',label:'男装-FIOBOC 24.04.29-7'},
+    {value:'932323558648506',label:'男装-FIOBOC-24.07.18-8'},
+    {value:'1613033863547531',label:'男装-FIOBOC-260821-5'},
+    {value:'1268023166396926',label:'女装-FIOBOC-260820-4'},
+    {value:'1704937850764924',label:'男装-FIOBOC-260820-3'},
+    {value:'1090342100015718',label:'男装-FIOBOC-260820-2'},
+    {value:'1046136031726638',label:'男装-FIOBOC-260820-1'},
+    {value:'1306248644776144',label:'西语-FIOBOC-MX-260907-1'},
+    {value:'1762809401280230',label:'阿语-FIOBOC-SA-260910-1'}
+  ];
+  const legacyMetaAccounts=[{value:'ACC-META-US',label:'Meta 美国主账户'},{value:'ACC-META-EU',label:'Meta 欧洲账户'}];
+  const googleAdvertisingAccount=Object.freeze({value:'806-068-4360',label:'Fioboc01'});
+  function normalizeAdvertisingPlatform(value) {
+    const token=String(value??'').trim().toLowerCase();
+    if(['meta ads','meta','facebook','fb'].includes(token))return META_ADS;
+    if(['google ads','google'].includes(token))return GOOGLE_ADS;
+    return '';
+  }
+  function advertisingAccount(n) {
+    const id=String(n.adAccountId||''),known=[...advertisingAccounts,googleAdvertisingAccount,...legacyMetaAccounts].find(a=>a.value===id);
+    return {value:id,label:n.adAccountName||known?.label||id};
+  }
+  const advertisingNameToken=(value,label)=>[String(value??'').trim(),label];
+  function advertisingNameStateFromGroups(previewGroups) {
+    const missing=previewGroups.flat().filter(([value])=>!value).map(([,label])=>label);
+    const name=missing.length?'':previewGroups.map(group=>group.map(([value])=>value).join('')).join('_');
+    return {name,missing,previewGroups};
+  }
   function advertisingNameState({spu='',adPage='',materialSource='',landingPage='',promoterCode='',completionDate='',materialId='',materialCategory=''}) {
-    const missing=[],token=(value,label)=>{const text=String(value??'').trim();if(!text)missing.push(label);return text;};
-    const date=dateValue(completionDate);if(!date)missing.push('素材完成日期');
-    const pieces=[token(spu,'SPU'),token(adPage,'投放主页'),token(materialSource,'素材来源'),token(landingPage,'落地页'),token(promoterCode,'推广人缩写')+(date?date.replaceAll('-',''):''),token(materialId,'素材ID'),token(materialCategory,'素材类型')];
-    return {name:missing.length?'':pieces.join('_'),missing};
+    const token=advertisingNameToken;
+    return advertisingNameStateFromGroups([
+      [token(spu,'SPU')], [token(adPage,'投放主页')], [token(materialSource,'素材来源')], [token(landingPage,'落地页')],
+      [token(promoterCode,'推广人'),token((dateValue(completionDate)||'').replaceAll('-',''),'素材完成日期')],
+      [token(materialId,'素材ID')], [token(materialCategory,'素材类型')]
+    ]);
+  }
+  function googleSublevelIdentifier(value) {
+    if(!/\p{Script=Han}/u.test(value))return value;
+    const candidates=value.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g)||[];
+    return candidates.reduce((identifier,candidate)=>candidate.length>identifier.length?candidate:identifier,'');
+  }
+  function googleAdvertisingNameState({campaignType,sublevelType,spu,materialCategory,materialVersion,landingPage,promoter,adCreatedAt}) {
+    const token=advertisingNameToken;
+    const sublevels=googleAdFieldValues(googleAdFieldValues(sublevelType).map(googleSublevelIdentifier));
+    const spus=googleAdFieldValues(googleAdFieldValues(spu).flatMap(value=>value.split(/[、，,；;+\r\n]+/)));
+    return advertisingNameStateFromGroups([
+      [token(campaignType,'广告系列类型')],
+      [token(sublevels.join('+'),'子层级类型')],
+      [token(spus.join('+'),'SPU')],
+      [token(materialCategory,'素材类型')],
+      [token(materialVersion,'素材版本')],
+      [token(String(landingPage??'').replaceAll('/',''),'落地页')],
+      [token(promoter,'推广人'),token((dateValue(adCreatedAt)||'').replaceAll('-',''),'广告创建时间')]
+    ]);
+  }
+  function googleAdRequiresMaterialUrl(materialId,existingUrl) {
+    return Boolean(materialId||String(existingUrl??'').trim());
   }
   function advertisingNamingContext(store,materialId,existing=null,config={}) {
     const material=store.materials.find(m=>m.id===materialId&&!m.deletedAt);
@@ -295,25 +359,94 @@
     const category=material.materialCategory||demand?.materialCategory||'';
     return {spu:existing?.spuSnapshot??material.spu??demand?.spu??'',completionDate:existing?.completionDateSnapshot||(material.deliveredAt||material.completionDate||demand?.completionDate||''),materialId:material.id,materialCategory:existing?.materialCategorySnapshot??(config.categoryCode?config.categoryCode(category):category)};
   }
+  function googleMaterialName(material,demand,config={}) {
+    return String(config.displayMaterialName?.(material,demand)||material.name||material.id).trim().slice(0,2048);
+  }
+  function advertisingTimestamp(value) {
+    const match=String(value??'').trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
+    if(!match||dateValue(match[1])!==match[1]||+match[2]>23||+match[3]>59||+(match[4]||0)>59)return '';
+    return match[1]+' '+match[2]+':'+match[3]+':'+(match[4]||'00');
+  }
+  function advertisingDate(value) {
+    const text=String(value??'').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(text)?dateValue(text)||'':advertisingTimestamp(text).slice(0,10);
+  }
   function saveAdvertisingNaming(store,materialId,input,actor='管理员',config={}) {
-    const existing=input.id?store.namings.find(n=>n.id===input.id):null;
-    if(input.id&&(!existing||existing.deletedAt))throw new Error('广告命名记录不存在或已删除。');
-    const context=advertisingNamingContext(store,materialId,existing,config);
-    const text=(key,limit=200)=>{const value=String(input[key]??(key==='remark'?existing?.remark:'')??'').trim();if(value.length>limit)throw new Error(key==='remark'?'备注最多1500个字符。':'输入内容超过允许长度。');return value;};
-    const platform=text('platform'),adPage=text('adPage'),materialSource=text('materialSource'),landingPage=text('landingPage'),promoter=text('promoter'),adAccountId=text('adAccountId'),adId=text('adId'),remark=text('remark',1500);
-    if((platform||!config.allowIncomplete)&&!advertisingPlatforms.includes(platform))throw new Error('请选择Facebook或Google。');
-    if((adPage||!config.allowIncomplete)&&!(config.pageValues||[]).includes(adPage))throw new Error('请选择当前配置中的投放主页。');
-    if((materialSource||!config.allowIncomplete)&&!(config.sourceValues||[]).includes(materialSource))throw new Error('请选择当前配置中的素材来源。');
-    if(!landingPage&&!config.allowIncomplete)throw new Error('请填写落地页。');
-    if((promoter||!config.allowIncomplete)&&!(config.users||[]).includes(promoter))throw new Error('请选择平台内的推广人。');
-    const promoterCode=promoter&&config.producerInitials?config.producerInitials(promoter):'';
-    const generated=advertisingNameState({...context,adPage,materialSource,landingPage,promoterCode});
-    if(generated.missing.length&&!config.allowIncomplete)throw new Error('广告名称缺少：'+generated.missing.join('、')+'。');
-    const at=now(),record={...existing,id:existing?.id||uid('ADN'),materialId,platform,adPage,materialSource,landingPage,promoter,adName:generated.name,spuSnapshot:context.spu,completionDateSnapshot:dateValue(context.completionDate),materialCategorySnapshot:context.materialCategory,promoterInitialsSnapshot:promoterCode,adAccountId,adAccountName:advertisingAccounts.find(a=>a.value===adAccountId)?.label||(existing?.adAccountId===adAccountId?existing?.adAccountName:'')||adAccountId,adId,remark,namingRuleVersion:'ad-v11',source:existing?.source||{system:'PLATFORM'},createdBy:existing?.createdBy||actor,createdAt:existing?.createdAt||at,updatedAt:at};
-    if(record.demandId){if(!record.legacyDemandId)record.legacyDemandId=record.demandId;}
+    const existing=input.id?store.namings.find(n=>n.id===input.id&&!n.deletedAt):null;
+    if(input.id&&!existing)throw new Error('广告命名记录不存在或已删除。');
+    const text=(key,limit=200)=>{const value=String(input[key]??(key==='remark'?existing?.remark:'')??'').trim();if(value.length>limit)throw new Error('输入内容超过允许长度。');return value;};
+    const platform=normalizeAdvertisingPlatform(input.platform);
+    const creatingStandalone=!existing&&!materialId&&config.allowStandalone;
+    if(creatingStandalone&&platform!==GOOGLE_ADS)throw new Error('独立新增广告命名的投放平台固定为 Google Ads。');
+    if(!platform)throw new Error('请选择 Meta Ads 或 Google Ads。');
+    if(existing&&(normalizeAdvertisingPlatform(existing.platform)||META_ADS)!==platform)throw new Error('已创建的广告命名不能更改投放平台。');
+    const landingPage=text('landingPage'),promoter=text('promoter'),adId=text('adId'),remark=text('remark',1500);
+    if(!landingPage)throw new Error('请填写落地页。');
+    if(!promoter||!(config.users||[]).includes(promoter))throw new Error('请选择平台内的推广人。');
+    const at=now(),common={...existing,id:existing?.id||uid('ADN'),platform,landingPage,promoter,adId,remark,source:existing?.source||{system:'PLATFORM'},createdBy:existing?.createdBy||actor,createdAt:existing?.createdAt||at,updatedAt:at};
+    let record;
+    if(platform===META_ADS){
+      const context=advertisingNamingContext(store,materialId,existing,config);
+      const adPage=text('adPage'),materialSource=text('materialSource'),adAccountId=text('adAccountId');
+      if(!adPage||(!(config.pageValues||[]).includes(adPage)&&existing?.adPage!==adPage))throw new Error('请选择当前配置中的投放主页。');
+      if(!materialSource||(!(config.sourceValues||[]).includes(materialSource)&&existing?.materialSource!==materialSource))throw new Error('请选择当前配置中的素材来源。');
+      const account=advertisingAccounts.find(a=>a.value===adAccountId)||(existing&&String(existing.adAccountId||'')===adAccountId?advertisingAccount(existing):null);
+      if(!adAccountId||!account)throw new Error('请选择广告账户。');
+      const promoterCode=config.producerInitials?.(promoter)||'';
+      const generated=advertisingNameState({...context,adPage,materialSource,landingPage,promoterCode});
+      record={...common,materialId,adPage,materialSource,adName:generated.name||existing?.adName||'',spuSnapshot:context.spu,completionDateSnapshot:dateValue(context.completionDate),materialCategorySnapshot:context.materialCategory,promoterInitialsSnapshot:promoterCode,adAccountId,adAccountName:account.label,namingRuleVersion:'ad-v11'};
+    }else{
+      const standalone=!materialId;
+      if(existing&&(existing.materialId||'')!==(materialId||''))throw new Error('不支持修改广告所关联的素材。');
+      if(standalone&&(!config.allowStandalone||(existing&&existing.entryMode!=='standalone')))throw new Error('请从 Google Ads 列表新增独立命名。');
+      const material=standalone?null:store.materials.find(m=>m.id===materialId&&!m.deletedAt);
+      if(!standalone&&!material)throw new Error('素材关联无效或已删除，请重新选择素材。');
+      const demand=material?store.demands.find(d=>d.id===material.demandId):null;
+      const adCreatedAt=config.fromMaterialBatch?at.slice(0,10):advertisingDate(input.adCreatedAt);
+      const materialUrl=config.fromMaterialBatch?String(material?.url??'').trim():text('materialUrl',2048);
+      if(!adCreatedAt)throw new Error('请填写有效的广告创建时间。');
+      const urlRequired=googleAdRequiresMaterialUrl(materialId,existing?.materialUrl);
+      if(!config.fromMaterialBatch&&(urlRequired||materialUrl)&&!isMaterialAddress(materialUrl))throw new Error('请填写有效的素材URL（HTTP/HTTPS 链接或局域网共享路径）。');
+      const account=existing?.adAccountId?advertisingAccount(existing):googleAdvertisingAccount;
+      if((creatingStandalone||input.adAccountId)&&input.adAccountId!==account.value)throw new Error('Google Ads 广告账户不可更改。');
+      const generatesName=creatingStandalone||existing?.namingRuleVersion===googleAdvertisingNameRuleVersion;
+      const materialValue=(key,fallback)=>config.fromMaterialBatch?String(fallback??'').trim().slice(0,200):text(key);
+      const usesOptions=generatesName||Array.isArray(existing?.sublevelType);
+      const sublevelType=usesOptions?googleAdFieldValues(input.sublevelType):text('sublevelType');
+      const previousCategory=existing?advertisingMaterialCategory(existing,material,demand):'';
+      const sourceCategory=advertisingMaterialCategory(null,material,demand);
+      const category=config.fromMaterialBatch?materialValue('materialCategory',config.categoryCode?.(sourceCategory)??sourceCategory):
+        existing&&input.materialCategory===undefined?previousCategory:text('materialCategory');
+      const fields={campaignType:text('campaignType'),sublevelType,spu:materialValue('spu',material?.spu??demand?.spu),materialCategory:category,materialVersion:materialValue('materialVersion',material?.version??demand?.version)};
+      if(generatesName){
+        const missing=Object.keys(googleAdvertisingFields).filter(key=>!googleAdFieldValues(fields[key]).length).map(key=>googleAdvertisingFields[key]);
+        if(missing.length)throw new Error('请填写：'+missing.join('、'));
+      }
+      if(!config.fromMaterialBatch){
+        for(const key of usesOptions?googleAdvertisingMultiKeys:['materialCategory']){
+          const previous=key==='materialCategory'?previousCategory:existing?.[key];
+          const allowed=[...(config.googleOptions?.[key]||[]),...googleAdFieldValues(previous)];
+          if((key!=='sublevelType'&&Array.isArray(input[key]))||googleAdFieldValues(fields[key]).some(value=>!allowed.includes(value)))throw new Error('请选择有效的'+googleAdvertisingFields[key]+'。');
+        }
+      }
+      let adName;
+      if(generatesName){
+        const generated=googleAdvertisingNameState({...fields,landingPage,promoter,adCreatedAt});
+        if(!generated.name)throw new Error('请填写可用于广告命名的'+generated.missing.join('、')+'。');
+        if(generated.name.length>2048)throw new Error('生成的广告名称最多2048个字符，请缩短命名字段。');
+        adName=generated.name;
+      }else{
+        adName=config.fromMaterialBatch?googleMaterialName(material,demand,config):text('adName',2048);
+        if(!adName)throw new Error('请填写广告名称。');
+      }
+      const {spu,materialCategory,...details}=fields;
+      record={...common,...details,materialId:materialId||'',entryMode:standalone?'standalone':'material',adName,adCreatedAt,materialUrl,adAccountId:account.value,adAccountName:account.label,spuSnapshot:spu,materialCategorySnapshot:materialCategory,
+        ...(generatesName?{namingRuleVersion:googleAdvertisingNameRuleVersion}:{})};
+    }
+    if(record.demandId&&!record.legacyDemandId)record.legacyDemandId=record.demandId;
     delete record.demandId;
     if(existing?.adName&&existing.adName!==record.adName&&!existing.legacyAdName)record.legacyAdName=existing.adName;
-    if(existing)store.namings.splice(store.namings.findIndex(n=>n.id===existing.id),1,record);else store.namings.push(record);
+    if(existing)store.namings.splice(store.namings.indexOf(existing),1,record);else store.namings.push(record);
     return record;
   }
   function createAdvertisingNamings(store,materialIds,input,actor='管理员',config={}) {
@@ -322,7 +455,7 @@
     const eligible=new Set(materialRows(store).map(row=>row.material.id));
     if(ids.some(id=>!eligible.has(id)))throw new Error('仅支持已完成需求产生的有效素材，请刷新后重新选择。');
     const next=clone(store),values={...input};delete values.id;
-    const records=ids.map(id=>saveAdvertisingNaming(next,id,values,actor,{...config,allowIncomplete:true}));
+    const records=ids.map(id=>saveAdvertisingNaming(next,id,values,actor,{...config,fromMaterialBatch:true}));
     store.namings=next.namings;return records;
   }
   function deleteMaterials(store,materialIds,actor='管理员') {
@@ -356,7 +489,8 @@
     return store.namings.flatMap(naming=>{
       if(naming.deletedAt)return [];
       const material=store.materials.find(m=>m.id===naming.materialId&&!m.deletedAt);
-      return material?[{naming,material,demand:store.demands.find(d=>d.id===material.demandId)||null}]:[];
+      if(material)return [{naming,material,demand:store.demands.find(d=>d.id===material.demandId)||null}];
+      return !naming.materialId&&naming.entryMode==='standalone'&&normalizeAdvertisingPlatform(naming.platform)===GOOGLE_ADS?[{naming,material:null,demand:null}]:[];
     });
   }
   // Old parent IDs remain audit data only. Material IDs are the sole active ad relation.
@@ -368,23 +502,41 @@
     if(store.adMaterialRelationSchemaVersion!==1){store.adMaterialRelationSchemaVersion=1;changed=true;}
     return changed;
   }
+  function advertisingMaterialCategory(n,material,demand) {
+    return n?.materialCategorySnapshot??n?.materialCategory??(material?.materialCategory||demand?.materialCategory||'');
+  }
   function advertisingRecordContext(store,n,material) {
     const demand=store.demands.find(d=>d.id===material?.demandId);
-    return {adName:n.adName||'',materialId:material?.id||'',platform:({'Meta':'Facebook','Google Ads':'Google'})[n.platform]||n.platform||'',spu:n.spuSnapshot??material?.spu??demand?.spu??'',adPage:n.adPage||'',materialSource:n.materialSource||'',promoter:n.promoter??n.createdBy??'',completionDate:dateValue(n.completionDateSnapshot||material?.deliveredAt||material?.completionDate||demand?.completionDate)};
+    return {adName:n.adName||'',materialId:material?.id||'',platform:normalizeAdvertisingPlatform(n.platform)||META_ADS,spu:n.spuSnapshot??material?.spu??demand?.spu??'',adPage:n.adPage||'',materialSource:n.materialSource||'',promoter:n.promoter??n.createdBy??'',completionDate:dateValue(n.completionDateSnapshot||material?.deliveredAt||material?.completionDate||demand?.completionDate),adCreatedAt:dateValue(n.adCreatedAt||n.createdAt)||'',materialUrl:n.materialUrl??material?.url??'',materialVersion:n.materialVersion??material?.version??demand?.version??'',campaignType:n.campaignType||'',sublevelType:n.sublevelType||'',materialCategory:advertisingMaterialCategory(n,material,demand)};
   }
-  const advertisingFilterDefaults={adName:'',materialId:'',platform:'',spu:'',adPage:'',materialSource:'',promoter:'',completionStart:'',completionEnd:''};
-  function normalizeAdvertisingFilters(input={}) {return Object.fromEntries(Object.keys(advertisingFilterDefaults).map(key=>[key,typeof input?.[key]==='string'?input[key].trim().slice(0,200):'']));}
+  const googleAdvertisingMultiFilters=Object.fromEntries(['campaignType','sublevelType','materialCategory'].map(key=>[key,googleAdvertisingFields[key]]));
+  const googleAdvertisingMultiKeys=Object.keys(googleAdvertisingMultiFilters);
+  const advertisingFilterDefaults={platform:META_ADS,adName:'',materialId:'',spu:'',adPage:'',materialSource:'',promoter:'',completionStart:'',completionEnd:'',createdStart:'',createdEnd:''};
+  function normalizeAdvertisingFilters(input={}) {
+    const f=Object.fromEntries(Object.entries(advertisingFilterDefaults).map(([key,value])=>[key,typeof input?.[key]==='string'?input[key].trim().slice(0,200):value]));
+    f.platform=normalizeAdvertisingPlatform(f.platform)||META_ADS;
+    for(const key of f.platform===GOOGLE_ADS?['materialId','adPage','materialSource','completionStart','completionEnd']:['createdStart','createdEnd'])f[key]='';
+    if(f.platform===GOOGLE_ADS)for(const key of googleAdvertisingMultiKeys){
+      const values=Array.isArray(input?.[key])?input[key]:[];
+      f[key]=[...new Set(values.filter(value=>typeof value==='string').map(value=>value.trim()).filter(Boolean))].sort();
+    }
+    return f;
+  }
   function validateAdvertisingFilters(input) {
-    const f=normalizeAdvertisingFilters(input),start=f.completionStart,end=f.completionEnd;
-    if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error('素材完成日期格式无效，请重新选择日期。');
-    if(start&&end&&start>end)throw new Error('素材完成日期开始日期不能晚于结束日期。');
+    const f=normalizeAdvertisingFilters(input),google=f.platform===GOOGLE_ADS,start=google?f.createdStart:f.completionStart,end=google?f.createdEnd:f.completionEnd,label=google?'广告创建时间':'素材完成日期';
+    if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error(label+'格式无效，请重新选择日期。');
+    if(start&&end&&start>end)throw new Error(label+'开始日期不能晚于结束日期。');
     return f;
   }
   function advertisingMatchesFilters(context,input) {
-    const f=normalizeAdvertisingFilters(input),date=dateValue(context.completionDate);
-    return ['adName','materialId','spu'].every(key=>!f[key]||String(context[key]||'').toLowerCase().includes(f[key].toLowerCase()))&&
-      ['platform','adPage','materialSource','promoter'].every(key=>!f[key]||context[key]===f[key])&&
-      (!f.completionStart||(Boolean(date)&&date>=f.completionStart))&&(!f.completionEnd||(Boolean(date)&&date<=f.completionEnd));
+    if(input?.platform&&!normalizeAdvertisingPlatform(input.platform))return false;
+    const f=normalizeAdvertisingFilters(input),google=f.platform===GOOGLE_ADS,date=dateValue(google?context.adCreatedAt:context.completionDate);
+    const start=google?f.createdStart:f.completionStart,end=google?f.createdEnd:f.completionEnd;
+    return (normalizeAdvertisingPlatform(context.platform)||META_ADS)===f.platform&&
+      ['adName','materialId','spu'].every(key=>!f[key]||String(context[key]||'').toLowerCase().includes(f[key].toLowerCase()))&&
+      ['adPage','materialSource','promoter'].every(key=>!f[key]||context[key]===f[key])&&
+      (!google||googleAdvertisingMultiKeys.every(key=>!f[key].length||googleAdFieldValues(context[key]).some(value=>f[key].includes(value))))&&
+      (!start||(Boolean(date)&&date>=start))&&(!end||(Boolean(date)&&date<=end));
   }
   function advertisingFilterStorageKey(userId) {filterStorageKey(userId);return 'ai-visual-advertising-filters-v1:'+encodeURIComponent(userId);}
   function encodeAdvertisingFilterPreference(userId,filters) {advertisingFilterStorageKey(userId);return JSON.stringify({version:1,kind:'advertising',userId,filters:validateAdvertisingFilters(filters)});}
@@ -398,7 +550,7 @@
     advertisingRows(store).forEach(row=>{if(row.material)namingCounts.set(row.material.id,(namingCounts.get(row.material.id)||0)+1);});
     return store.materials.flatMap(material=>{const demand=store.demands.find(d=>d.id===material.demandId);return !material.deletedAt&&demand&&!demand.deletedAt&&demand.status==='已完成'?[{material,demand,namingCount:namingCounts.get(material.id)||0}]:[];});
   }
-  function namingsForDemand(store,id) {return advertisingRows(store).filter(row=>row.material.demandId===id).map(row=>row.naming);}
+  function namingsForDemand(store,id) {return advertisingRows(store).filter(row=>row.material?.demandId===id).map(row=>row.naming);}
   function changeStatus(store,id,next,note='',actor='管理员') {
     const d=store.demands.find(v=>v.id===id);if(!d)throw new Error('需求不存在。');
     assertDemandMutable(d);
@@ -475,7 +627,7 @@
     const batch={id:batchId,at,actor,entity:input.entity,baseId:input.baseId,tableId:input.tableId,fileName:input.fileName||'',total:plans.length,imported,skipped:plans.filter(p=>p.outcome==='skip').length,issues:plans.filter(p=>p.outcome==='issue').map(p=>({line:p.line,sourceRecordId:p.source.recordId,reason:p.reason,rawSnapshot:p.source.rawSnapshot})),mapping:clone(input.mapping)};
     store.batches.unshift(batch);return batch;
   }
-  const api={isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
+  const api={META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,googleMaterialName,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandRecordsModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 

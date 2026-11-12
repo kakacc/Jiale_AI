@@ -17,7 +17,7 @@
       const values=select?[...select.options].filter(o=>o.value&&!o.disabled).map(o=>({value:o.value,label:o.textContent.trim()})):api.adOptions(f);
       optionCache.set(key,values);return values.map(o=>({...o}));
     }
-    const config={users:api.users.map(u=>u.name),options:fieldOptions,label};
+    const config={users:api.users.map(u=>u.name),options:fieldOptions,label,optionCode:api.optionCode};
     const progressTones={'待分配':'unassigned','待制作':'queued','制作中':'working','已完成':'completed','项目暂停':'paused'};
     const helpContent={
       submissionState:{title:'行状态说明',rows:[['草稿','草稿状态需求未进入执行流程，仅自己可见'],['已提交','需求进入执行流程（会有进度状态），数据他人可见']]},
@@ -69,7 +69,7 @@
         const old=store.demands.find(d=>d.id===plan.id&&!d.deletedAt);if(!old)throw new Error('源需求不存在。');G.assertVersion(old,plan.expected);const next=G.copyRecord(old,api.currentUser);next.id=plan.copy.id;next.createdAt=plan.copy.createdAt;if(store.demands.some(d=>d.id===next.id))throw new Error('复制的草稿已经创建，不能重复执行。');next.revision=1;M.appendLog(next,'复制需求','复制来源：'+old.id+'；新草稿，对接人为当前用户，制作周期自动计算',api.currentUser.name);store.demands.unshift(next);return next;
       }return G.savePatch(store,plan,api.currentUser,config).record;}
     function enrich(plan){try{const source=latest(),before=source.demands.find(d=>d.id===plan.id)||plan.record;perform(source,{...plan,confirmed:true});const after=source.demands.find(d=>d.id===plan.id);const warning=plan.kind==='patch'&&G.isDraft(after)?G.requiredIssues(after,config).join('；'):'';
-        const duplicate=plan.isNew&&after?.spu&&after.channelCategory&&source.demands.some(d=>d.id!==after.id&&!d.deletedAt&&d.spu===after.spu&&d.channelCategory===after.channelCategory&&d.requestDate===after.requestDate);
+        const duplicate=plan.isNew&&after?.spu&&after.channelCategory&&source.demands.some(d=>d.id!==after.id&&!d.deletedAt&&d.spu===after.spu&&api.optionCode('channelCategory',d.channelCategory)===api.optionCode('channelCategory',after.channelCategory)&&d.requestDate===after.requestDate);
         return {...plan,error:'',warning:[warning,after?M.postNumberWarning(source,after):'',duplicate?'存在相同SPU、渠道及下需时间，请核对是否重复':'',!G.isDraft(before)&&plan.kind==='patch'?'将修改已提交需求，请确认执行影响':''].filter(Boolean).join('；')};
       }catch(error){return {...plan,error:error.message,warning:''};}}
     function executePlans(plans,title,excluded=[]){

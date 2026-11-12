@@ -68,8 +68,9 @@
     if(f.type==='date'){const date=M.dateValue(v);if(!date)throw new Error(f.label+'格式无效，请使用YYYY-MM-DD。');return date;}
     if(f.type==='person'){if(field==='owner'&&M.usesPostNumber(d.expression))M.validateProducer(d,v,config.users||[],false);else if(!(config.users||[]).includes(v))throw new Error(f.label+'不存在，请选择平台人员。');}
     if(f.type==='select'){
-      const values=config.options(field,d),matches=values.filter(o=>o.value===v||o.label===v);
-      const exact=matches.find(o=>o.value===v);if(exact)return exact.value;
+      const values=config.options(field,d),current=config.optionCode?.(field,v)||v;
+      const exact=values.find(o=>o.value===current);if(exact)return exact.value;
+      const matches=values.filter(o=>o.label===v);
       if(matches.length!==1)throw new Error(f.label+'不是有效选项，请核对配置。');return matches[0].value;
     }
     return v;
