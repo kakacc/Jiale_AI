@@ -4,11 +4,11 @@
   'use strict';
   const M=typeof module!=='undefined'&&module.exports?require('./visual-demand-records-model.js'):global.VisualDemandRecordsModel;
   const fields=[
-    ['title','需求名称','text',true],['spu','需求SPU','text',true],['businessChannel','业务渠道','select',true],['productLevel','产品级别','select',true],['demandSource','需求来源','select',true],
-    ['requestDate','下需时间','date',true],['ddl','DDL','date',true],['channelCategory','渠道归类','select',true],['materialType','素材格式','select',true],
-    ['expression','表达方式','select',true],['mainSellingPoint','主卖点','select',true],['scene','场景','select',true],['secondarySellingPoint','辅助卖点','select',false],['bodyType','模特体型','select',false],['materialCategory','素材类型','select',true],
-    ['requirements','制作要求','long',false],['reference','制作参考','reference',false],['fbInfo','FB信息','long',false],['edmInfo','EDM信息','long',false],['requester','需求对接人','person',true],['priority','优先级','select',true],['owner','制作人','person',false]
-  ].map(([key,label,type,required])=>({key,label,type,required}));
+    ['title','需求名称','text'],['spu','需求SPU','text'],['businessChannel','业务渠道','select'],['productLevel','产品级别','select'],['demandSource','需求来源','select'],
+    ['requestDate','下需时间','date'],['ddl','DDL','date'],['channelCategory','渠道归类','select'],['materialType','素材格式','select'],
+    ['expression','表达方式','select'],['mainSellingPoint','主卖点','select'],['scene','场景','select'],['secondarySellingPoint','辅助卖点','select'],['bodyType','模特体型','select'],['materialCategory','素材类型','select'],
+    ['requirements','制作要求','long'],['reference','制作参考','reference'],['fbInfo','FB信息','long'],['edmInfo','EDM信息','long'],['requester','需求对接人','person'],['priority','优先级','select'],['owner','制作人','person']
+  ].map(([key,label,type])=>({key,label,type}));
   const adFields=M.adTeamDemandFormSections.flatMap(x=>x.fields);
   const commonFields=['title','spu','channelCategory','materialType','requestDate','ddl','requester','priority','owner'];
   const keyFields=fields.filter(f=>!['long','reference'].includes(f.type)&&!['secondarySellingPoint','bodyType'].includes(f.key)).map(f=>f.key);
@@ -25,7 +25,7 @@
     const sameType=records.length>0&&new Set(records.map(d=>d.demandType)).size===1&&M.demandTypes.some(t=>t.value===records[0].demandType),allDraft=records.length>0&&records.every(isDraft);
     return {sameType,allDraft,editReason:sameType?'':'仅支持批量修改相同需求类型的数据',submitReason:allDraft?'':'仅支持批量提交行状态为草稿的数据，请先取消勾选已提交的数据'};
   }
-  function batchFields(records){if(!batchEligibility(records).sameType)throw new Error('仅支持批量修改相同需求类型的数据');return fields.filter(f=>allowed(records[0],f.key));}
+  function batchFields(records){if(!batchEligibility(records).sameType)throw new Error('仅支持批量修改相同需求类型的数据');return fields.filter(f=>allowed(records[0],f.key)).map(f=>({...f,required:records.some(d=>M.isDemandFieldRequired(d,f.key))}));}
   function sortDemands(records,sort='request-desc'){
     const compare=sort==='ddl-asc'?(a,b)=>(a.ddl||'9999').localeCompare(b.ddl||'9999'):sort==='created-desc'?(a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''):sort==='id-asc'?(a,b)=>a.id.localeCompare(b.id):(a,b)=>(b.requestDate||'').localeCompare(a.requestDate||'')||(b.createdAt||'').localeCompare(a.createdAt||'');
     return records.slice().sort((a,b)=>Number(isDraft(b))-Number(isDraft(a))||compare(a,b)||a.id.localeCompare(b.id));
@@ -77,9 +77,9 @@
   function requiredIssues(d,config){
     const issues=[];
     if(!M.demandTypes.some(t=>t.value===d.demandType))issues.push('请选择需求类型');
-    fields.filter(f=>f.required&&allowed(d,f.key)).forEach(f=>{
+    fields.filter(f=>allowed(d,f.key)&&M.isDemandFieldRequired(d,f.key)).forEach(f=>{
       if(!String(d[f.key]||'').trim())issues.push(f.label+'不能为空');
-      else try{normalize(f.key,d[f.key],config,d);}catch(e){issues.push(e.message);}
+      else if(f.key!=='owner')try{normalize(f.key,d[f.key],config,d);}catch(e){issues.push(e.message);}
     });
     if(d.owner)try{M.validateProducer(d,d.owner,config.users||[],false);}catch(error){issues.push(error.message);}
     if(d.requestDate&&d.ddl&&d.requestDate>d.ddl)issues.push('DDL不能早于下需时间');
@@ -110,19 +110,20 @@
       const prior=requiredIssues(d,config),errors=requiredIssues(next,config).filter(e=>!prior.includes(e));if(errors.length)throw new Error(errors.join('；'));
     }}
     if(next.requestDate&&next.ddl&&next.requestDate>next.ddl)throw new Error('DDL不能早于下需时间。');
-    if(next.completionDate&&Object.hasOwn(patch,'requestDate')){const days=M.productionDays(next.requestDate,next.completionDate);if(days===null||days<0)throw new Error('下需时间不能晚于已记录的完成日期。');next.productionDays=days;}
+    if(next.completionDate&&Object.hasOwn(patch,'requestDate')){const days=M.productionDays(next.requestDate,next.completionDate);if(days!==null&&days<0)throw new Error('下需时间不能晚于已记录的完成日期。');next.productionDays=days;}
     if(d.demandType==='ad-team'){
       next.businessChannel=d.businessChannel||'DTC';
     }
-    if(!isDraft(d)&&['待分配','待制作'].includes(d.status))next.status=M.initialProgressStatus(next.owner);
+    if(!isDraft(d)&&['待分配','待制作'].includes(d.status)&&next.owner!==d.owner)next.status=M.initialProgressStatus(next.owner);
     return {next,changes};
   }
-  function savePatch(store,{id,patch,expected,isNew=false,record,confirmed=false},actor,config){
+  function savePatch(store,{id,patch,expected,isNew=false,record,confirmed=false,batchEdit=false},actor,config){
     const old=store.demands.find(d=>d.id===id);
     if(isNew&&old)throw new Error('该草稿已经保存，请刷新记录后重试。');
     const d=old||record;if(!d||d.deletedAt)throw new Error('记录不存在或已删除。');
     assertDraftAccess(d,actor);if(old)assertVersion(old,expected);
     if(!isDraft(d))M.assertDemandMutable(d);
+    if(batchEdit){const field=fields.find(f=>Object.hasOwn(patch,f.key)&&M.isDemandFieldRequired(d,f.key)&&!String(patch[f.key]??'').trim());if(field)throw new Error(field.label+'为必填项，不可清空。');}
     const {next,changes}=changedValues(d,patch,config);
     if(!isDraft(d)&&changes.some(c=>keyFields.includes(c.field))&&!confirmed)throw new Error('已提交需求的关键字段变更需要确认。');
     if(!changes.length){if(isNew)throw new Error('空白行不创建业务记录，请先填写内容。');return {record:d,unchanged:true};}

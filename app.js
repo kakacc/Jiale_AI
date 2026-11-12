@@ -3973,7 +3973,7 @@
         <label class="field demand-form-full"><span class="field-label">EDM信息</span><textarea name="edmInfo" rows="3" placeholder="填写 EDM 主题或版位信息，支持换行">${escapeHtml(item.edmInfo || '')}</textarea></label>
       </div></div>
       <div class="demand-form-section"><div class="demand-form-section-title"><b>协作信息</b><span>明确需求与制作责任人</span></div><div class="demand-form-grid">
-        ${demandUserPickerMarkup('requester','需求对接人',requester,true)}
+        ${demandUserPickerMarkup('requester','需求对接人',requester,settings.requireRequester!==false)}
         <label class="field"><span class="field-label">优先级 ${demandFieldHelpMarkup('日常安排 定义：P2常规，素材下需 定义：P1优先 或 P0紧急')} <em class="required-mark">*</em></span><select name="priority" required>${demandOptionMarkup('priority', item.priority || 'P2')}</select></label>
         ${demandUserPickerMarkup('owner','制作人',owner,!settings.allowUnassignedOwner)}
       </div></div>
@@ -4003,7 +4003,7 @@
         if (!values[select.name] && originalValue && select.dataset.userChanged !== 'true' && !demandOptionByValue(select.name, originalValue)) values[select.name] = originalValue;
       });
     }
-    if (!values.requester) { toast('请选择需求对接人', 'warning'); $('[data-demand-user-picker="requester"] > summary', form)?.focus(); return null; }
+    if (settings.requireRequester!==false && !values.requester) { toast('请选择需求对接人', 'warning'); $('[data-demand-user-picker="requester"] > summary', form)?.focus(); return null; }
     if (!values.owner && !settings.allowUnassignedOwner) { toast('请选择制作人', 'warning'); $('[data-demand-user-picker="owner"] > summary', form)?.focus(); return null; }
     if (values.ddl && values.requestDate && values.ddl < values.requestDate) { toast('DDL 不能早于下需时间', 'warning'); form.elements.ddl.focus(); return null; }
     const timestamp = nowText();

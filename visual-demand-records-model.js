@@ -164,6 +164,12 @@
     if(['已取消','项目暂停'].includes(status))return '项目暂停';
     return initialProgressStatus(owner);
   }
+  const sharedRequiredFields = new Set(['title','spu','channelCategory','materialType','expression','mainSellingPoint','scene','materialCategory']);
+  const visualOnlyRequiredFields = new Set(['businessChannel','productLevel','demandSource','requestDate','ddl','requester','priority']);
+  function isDemandFieldRequired(demand, field) {
+    if(field==='owner')return demand.submissionState!=='draft'&&canonicalProgressStatus(demand.status,demand.owner)!=='待分配';
+    return sharedRequiredFields.has(field)||(demand.demandType!=='ad-team'&&visualOnlyRequiredFields.has(field));
+  }
   function normalizeProgressStore(store) {
     let changed=false;
     store.demands.forEach(d=>{
@@ -201,6 +207,7 @@
     if(existing){assertDemandMutable(existing);if(String(values.demandType||'')!==String(existing.demandType||''))throw new Error('编辑需求不支持修改需求类型。');}
     else if(!demandTypes.some(type=>type.value===values.demandType))throw new Error('请选择需求类型。');
     const owner=String(values.owner||'').trim();
+    if(existing&&isDemandFieldRequired(existing,'owner')&&!owner)throw new Error('制作人不能为空。');
     const current=existing?canonicalProgressStatus(existing.status,existing.owner):'';
     const status=!existing||!owner||['待制作','待分配'].includes(current)?initialProgressStatus(owner):current;
     return {...existing,...values,owner,status,demandType:existing?existing.demandType||'':values.demandType};
@@ -222,11 +229,11 @@
     if(!demandTypes.some(type=>type.value===d.demandType))throw new Error('请先补充需求类型。');
     const status=String(input.status||''),owner=String(input.owner||'').trim(),version=String(input.version||'').trim(),completionDate=String(input.completionDate||''),url=String(input.url||'').trim();
     if(!visualProgressStatuses.includes(status))throw new Error('请选择有效的进度状态。');
-    validateProducer(d,owner,validOwners);
+    validateProducer(d,owner,validOwners,isDemandFieldRequired({...d,status},'owner'));
     if(!version||version.length>200)throw new Error('请填写版本，最多200个字符。');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(completionDate)||dateValue(completionDate)!==completionDate)throw new Error('请选择有效的完成日期。');
     const days=productionDays(d.requestDate,completionDate);
-    if(days===null)throw new Error('请先在需求基础信息中补充有效的下需日期。');
+    if(days===null&&(isDemandFieldRequired(d,'requestDate')||String(d.requestDate??'').trim()))throw new Error('请先在需求基础信息中补充有效的下需日期。');
     if(days<0)throw new Error('完成日期不能早于下需日期。');
     if(!url&&d.demandType!=='ad-team')throw new Error('请填写素材URL。');
     if(url&&!isMaterialAddress(url))throw new Error('请填写有效的 HTTP/HTTPS 链接或局域网共享路径。');
@@ -248,7 +255,7 @@
       else{material={id:uid('MAT'),demandId,name:d.title,type:({IMG:'图片',VID:'视频',GIF:'GIF'}[d.materialType]||d.materialType||'图片'),originalCode:'',sourceType:'人工制作',source:{system:'PLATFORM'},createdAt:at,...metadata};store.materials.push(material);}
       d.executionMaterialId=material.id;
     }
-    appendLog(d,'执行需求',previous+' → '+status+'；制作人：'+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+days+'天'+(material?'；素材：'+material.id:''),actor);
+    appendLog(d,'执行需求',previous+' → '+status+'；制作人：'+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+(days===null?'未计算':days+'天')+(material?'；素材：'+material.id:''),actor);
     return {demand:d,material:material||null};
   }
   function saveVisualExecution(store,demandId,input,actor='管理员',validOwners=[]) {
@@ -468,7 +475,7 @@
     const batch={id:batchId,at,actor,entity:input.entity,baseId:input.baseId,tableId:input.tableId,fileName:input.fileName||'',total:plans.length,imported,skipped:plans.filter(p=>p.outcome==='skip').length,issues:plans.filter(p=>p.outcome==='issue').map(p=>({line:p.line,sourceRecordId:p.source.recordId,reason:p.reason,rawSnapshot:p.source.rawSnapshot})),mapping:clone(input.mapping)};
     store.batches.unshift(batch);return batch;
   }
-  const api={advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
+  const api={isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandRecordsModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 
