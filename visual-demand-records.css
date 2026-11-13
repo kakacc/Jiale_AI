@@ -109,3 +109,13 @@
 .vd-google-ad-create .vd-batch-naming-preview h3{margin:0 0 8px}
 .vd-google-ad-create .vd-batch-preview-item{margin-bottom:0}
 .vd-ad-table-v24.vd-google-ad-table{min-width:1870px}
+
+#mainDialog:has(.vd-visual-execution) .dialog-foot{justify-content:flex-end}
+#mainDialog:has(.vd-visual-execution) .dialog-foot>span,
+#mainDialog:has(.vd-visual-execution) .dialog-cancel{display:none}
+#mainDialog:has(.vd-visual-execution) #dialogConfirm::after{content:"⌄";margin-left:8px}
+.vd-execution-priority input[readonly]{background:#f3f5f8;color:#606266}
+.vd-execution-status-menu{position:fixed;inset:auto;margin:0;min-width:146px;padding:4px;border:1px solid #dfe6f1;border-radius:6px;background:#fff;box-shadow:0 8px 20px #2334531c}
+.vd-execution-status-menu button{display:block;width:100%;padding:8px 12px;text-align:left;border:0;border-radius:4px;background:#fff;color:#303133}
+.vd-execution-status-menu button:hover,.vd-execution-status-menu button:focus-visible{background:#f0f5ff}
+.vd-execution-status-menu button[aria-current]{color:#235da7;font-weight:600}

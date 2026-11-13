@@ -22,10 +22,6 @@
       const state=namingState(d,values);
       return '<label class="vd-form-full vd-material-name">素材名称<output id="'+id+'" class="naming-preview-field" data-runtime-copy>'+api.namingPreviewMarkup(state)+'</output></label>';
     }
-    function updateNamingField(d,form,id) {
-      const state=namingState(d,{owner:form.elements.owner.value,completionDate:form.elements.completionDate.value,version:form.elements.version.value});
-      $('#'+id).innerHTML=api.namingPreviewMarkup(state);
-    }
     function materialAddressMarkup(value,empty='—') {
       const url=M.safeUrl(value);
       if(url)return '<a class="table-link" href="'+h(url)+'" target="_blank" rel="noopener noreferrer">查看素材 ↗</a>';
@@ -39,7 +35,7 @@
     }
     async function copyMaterialName(value) {try{await navigator.clipboard.writeText(value);api.toast('素材名称已复制');}catch{api.toast('复制失败，请选中素材名称手动复制','warning');}}
     async function copyMaterialAddress(value) {try{await navigator.clipboard.writeText(value);api.toast('素材地址已复制');}catch{api.toast('复制失败，请手动选择并复制素材地址','warning');}}
-    const badge=status=>'<span class="vd-status vd-status-'+({'待处理':'pending','进行中':'running','已交付':'delivered','已关闭':'closed','已取消':'cancelled','制作中':'running','已完成':'delivered','项目暂停':'paused','待制作':'pending','待分配':'pending'}[status]||'pending')+'">'+h(status)+'</span>';
+    const badge=status=>'<span class="vd-status vd-status-'+({'待处理':'pending','进行中':'running','已交付':'delivered','已关闭':'closed','已取消':'cancelled','制作中':'running','已完成':'delivered','项目暂停':'paused','待制作':'pending','待分配':'pending'}[status]||'pending')+'">'+h(M.progressLabel(status))+'</span>';
     const label=(field,value)=>value===null||value===undefined||value===''?'':api.optionLabel(field,value)||value;
     const typeLabel=value=>M.demandTypes.find(t=>t.value===value)?.label||'待补充';
     function ownerControl(d,value='',required=false){return M.usesPostNumber(d.expression)?'<input name="owner" type="text" maxlength="200" value="'+h(value)+'" placeholder="请输入帖子编号" data-post-owner '+(required?'required':'')+'><small class="vd-warning" data-post-warning role="status" hidden></small>':'<select name="owner" '+(required?'required':'')+'>'+options(api.users.map(u=>({value:u.name,label:u.name+' · '+u.department})),value,'请选择制作人')+'</select>';}
@@ -159,7 +155,7 @@
       api.toast('已导出当前筛选范围内的需求记录');
     }
     function demandListMarkup(list,count,pages) {
-      return '<form id="vdFilterForm" class="vd-filters vd-demand-filters">'+[['demandId','需求ID','输入需求ID'],['title','需求名称','输入需求名称'],['spu','SPU','输入SPU']].map(([key,name,placeholder])=>'<label>'+name+'<input name="'+key+'" placeholder="'+placeholder+'" maxlength="200" value="'+h(filters[key])+'"></label>').join('')+'<label>需求类型<select name="demandType">'+options(M.demandTypes,filters.demandType)+'</select></label><label>进度状态<select name="status">'+options(M.statuses,filters.status)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>行状态<select name="submissionState">'+options([{value:'draft',label:'草稿'},{value:'submitted',label:'已提交'}],filters.submissionState)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>优先级<select name="priority">'+options(['P0','P1','P2'],filters.priority)+'</select></label>'+'<div class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+rangeMarkup('request','下需日期')+'</div><div class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+rangeMarkup('ddl','DDL')+'</div>'+'<label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>制作人<select name="owner">'+options([...new Set([...api.users.map(u=>u.name),...visibleDemands().map(d=>d.owner).filter(Boolean)])],filters.owner)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>需求对接人<select name="requester">'+options([...new Set([...api.users.map(u=>u.name),...visibleDemands().map(d=>d.requester).filter(Boolean)])],filters.requester)+'</select></label>'+[['productLevel','产品级别'],['channelCategory','渠道归类'],['demandSource','需求来源']].map(([key,name])=>'<label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+name+'<select name="'+key+'">'+options([...new Set(visibleDemands().map(d=>api.optionCode(key,d[key])).filter(Boolean))].map(v=>({value:v,label:label(key,v)})),api.optionCode(key,filters[key]))+'</select></label>').join('')+'<div class="vd-demand-filter-footer"><span id="vdFilterSaveState" class="vd-filter-save-state">'+h(filterSaveLabel())+'</span><div class="vd-filter-actions"><button class="button primary" type="submit">搜索</button><button class="button secondary" type="button" data-vd-action="reset">重置</button><button class="button secondary" type="button" data-vd-action="save-filters" '+(!preferenceKey?'disabled':'')+'>保存筛选</button><button class="text-button" type="button" data-vd-action="toggle-filters" aria-expanded="'+filtersExpanded+'">'+(filtersExpanded?'收起 ⌃':'展开 ⌄')+'</button></div></div></form>'+
+      return '<form id="vdFilterForm" class="vd-filters vd-demand-filters">'+[['demandId','需求ID','输入需求ID'],['title','需求名称','输入需求名称'],['spu','SPU','输入SPU']].map(([key,name,placeholder])=>'<label>'+name+'<input name="'+key+'" placeholder="'+placeholder+'" maxlength="200" value="'+h(filters[key])+'"></label>').join('')+'<label>需求类型<select name="demandType">'+options(M.demandTypes,filters.demandType)+'</select></label><label>进度状态<select name="status">'+options(M.statuses.map(value=>({value,label:M.progressLabel(value)})),filters.status)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>行状态<select name="submissionState">'+options([{value:'draft',label:'草稿'},{value:'submitted',label:'已提交'}],filters.submissionState)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>优先级<select name="priority">'+options(['P0','P1','P2'],filters.priority)+'</select></label>'+'<div class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+rangeMarkup('request','下需日期')+'</div><div class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+rangeMarkup('ddl','DDL')+'</div>'+'<label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>制作人<select name="owner">'+options([...new Set([...api.users.map(u=>u.name),...visibleDemands().map(d=>d.owner).filter(Boolean)])],filters.owner)+'</select></label><label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>需求对接人<select name="requester">'+options([...new Set([...api.users.map(u=>u.name),...visibleDemands().map(d=>d.requester).filter(Boolean)])],filters.requester)+'</select></label>'+[['productLevel','产品级别'],['channelCategory','渠道归类'],['demandSource','需求来源']].map(([key,name])=>'<label class="vd-filter-advanced" '+(filtersExpanded?'':'hidden')+'>'+name+'<select name="'+key+'">'+options([...new Set(visibleDemands().map(d=>api.optionCode(key,d[key])).filter(Boolean))].map(v=>({value:v,label:label(key,v)})),api.optionCode(key,filters[key]))+'</select></label>').join('')+'<div class="vd-demand-filter-footer"><span id="vdFilterSaveState" class="vd-filter-save-state">'+h(filterSaveLabel())+'</span><div class="vd-filter-actions"><button class="button primary" type="submit">搜索</button><button class="button secondary" type="button" data-vd-action="reset">重置</button><button class="button secondary" type="button" data-vd-action="save-filters" '+(!preferenceKey?'disabled':'')+'>保存筛选</button><button class="text-button" type="button" data-vd-action="toggle-filters" aria-expanded="'+filtersExpanded+'">'+(filtersExpanded?'收起 ⌃':'展开 ⌄')+'</button></div></div></form>'+
         grid.markup();
     }
 
@@ -329,31 +325,80 @@
         api.closeDialog();render();const warning=M.postNumberWarning(store,d);api.toast('制作人已分配，需求已转为待制作'+(warning?'；'+warning:''),warning?'warning':'success');
       });bindPostWarning($('#vdAssignProducerForm'),d);
     }
-    const canExecute=d=>d.submissionState!=='draft'&&M.canModifyDemand(d)&&can('demand:manage')&&can('demand:delivery:manage');
     function executeDemand(id) {
       const d=demand(id);if(!d)return;
       if(d.submissionState==='draft'){api.toast('请先提交需求，再执行制作','warning');return;}
-      try{M.assertDemandMutable(d);}catch(error){api.toast(error.message,'warning');return;}
       if(d.status==='待分配'){assignProducer(id);return;}
-      if(!guard('demand:manage')||!guard('demand:delivery:manage'))return;
+      if(!M.canExecuteDemand(d)||!guard('demand:manage')||!guard('demand:delivery:manage'))return;
       if(!M.demandTypes.some(type=>type.value===d.demandType)){api.toast('该需求缺少需求类型，请联系管理员补齐','warning');return;}
-      const defaults=M.visualExecutionDefaults(d,actor),mats=materialsFor(id),selected=mats.length===1?mats[0]:mats.find(m=>m.id===d.executionMaterialId),days=M.productionDays(d.requestDate,defaults.completionDate);
-      const generated=(date,producer)=>!String(producer??'').trim()?'':M.generateMaterialAddress({completionDate:date,producer,businessChannel:label('businessChannel',d.businessChannel),channelCategory:label('channelCategory',d.channelCategory),spu:d.spu||''});
-      const initialAuto=generated(defaults.completionDate,defaults.owner),savedAddress=(d.executionUpdatedAt||d.materialUrlUpdatedAt)?(d.executionUrl??selected?.url??''):'';
+      const expectedVersion=window.VisualDemandGridModel.version(d);
+      const defaults={...M.visualExecutionDefaults(d,actor),owner:d.owner||''};
+      const mats=materialsFor(id),selected=mats.length===1?mats[0]:mats.find(m=>m.id===d.executionMaterialId);
+      const urlRequired=d.demandType!=='ad-team';
+      const generated=date=>defaults.owner?M.generateMaterialAddress({completionDate:date,producer:defaults.owner,businessChannel:label('businessChannel',d.businessChannel),channelCategory:label('channelCategory',d.channelCategory),spu:d.spu||''}):'';
+      const initialAuto=generated(defaults.completionDate),savedAddress=(d.executionUpdatedAt||d.materialUrlUpdatedAt)?(d.executionUrl??selected?.url??''):'';
       let manualAddress=d.executionUrlMode==='manual'||Boolean(savedAddress)&&(!d.executionUrlMode&&savedAddress!==initialAuto);
       const address=manualAddress?savedAddress:initialAuto;
-      api.openDialog('执行需求',d.title+' · '+id,'<form id="vdVisualExecutionForm" class="dialog-wide-content vd-form-grid vd-visual-execution"><section class="vd-execution-priority vd-form-full"><p>请先确认进度状态与完成日期</p><div class="vd-execution-priority-fields"><label><span>进度状态 <em class="required-mark">*</em></span><select name="status" required autofocus>'+options(M.statuses,defaults.status,null)+'</select></label><label><span>完成日期 <em class="required-mark">*</em></span><input type="date" name="completionDate" required value="'+h(defaults.completionDate)+'"></label></div></section><label><span>制作人 <em class="required-mark" id="vdExecutionOwnerRequired" '+(M.isDemandFieldRequired({...d,status:defaults.status},'owner')?'':'hidden')+'>*</em></span>'+ownerControl(d,defaults.owner,M.isDemandFieldRequired({...d,status:defaults.status},'owner'))+'</label><label><span>版本 <em class="required-mark">*</em></span><input name="version" required maxlength="200" value="'+h(defaults.version)+'" placeholder="例如：V1"></label><label class="vd-form-full">制作周期 <div class="vd-cycle-control"><input name="productionDays" readonly aria-readonly="true" value="'+h(days===null?(d.demandType==='ad-team'&&!d.requestDate?'':'待补充下需日期'):days<0?'完成日期早于下需日期':days)+'"><span>天</span></div><small class="vd-type-help">下需日期：'+h(M.dateValue(d.requestDate)||(d.demandType==='ad-team'?'未填写，制作周期不计算':'待补充'))+'；按完成日期与下需日期的自然日差自动计算，同日为0天。</small></label>'+(mats.length>1?'<label class="vd-form-full">本次更新的素材记录 <select name="materialId" required>'+options(mats.map(m=>({value:m.id,label:m.name+' · '+m.id})),selected?.id||'','请选择历史素材记录')+'</select><small class="vd-warning">该需求有多份历史素材，选择本次要更新的记录；其余记录保留。</small></label>':'<input type="hidden" name="materialId" value="'+h(selected?.id||'')+'">')+namingField(d,defaults,'vdExecutionMaterialName')+'<div class="vd-form-full vd-address-field"><label for="vdExecutionAddress">素材URL '+(d.demandType==='ad-team'?'（选填）':'<em class="required-mark">*</em>')+'</label><input id="vdExecutionAddress" name="url" type="text" '+(d.demandType==='ad-team'?'':'required')+' maxlength="2048" value="'+h(address)+'" placeholder="支持局域网共享路径或 HTTP/HTTPS 链接"><div class="vd-address-actions"><small class="vd-type-help" id="vdExecutionAddressMode">'+(manualAddress?'已手动修改；变更制作人或日期时保留当前地址。':'已按规则生成，可手动修改。')+'</small><button type="button" class="text-button" data-vd-regenerate-address>按规则重新生成</button></div></div></form>','保存执行信息',()=>{
-        const form=$('#vdVisualExecutionForm');if(!form.reportValidity())return;
-        const input=Object.fromEntries(new FormData(form));input.urlMode=manualAddress?'manual':'auto';
-        if(!commit(()=>M.saveDemandExecution(store,id,input,actor,api.users.map(u=>u.name),namingState)))return;
-        api.closeDialog();render();const warning=M.postNumberWarning(store,d);api.toast('执行信息已保存'+(warning?'；'+warning:''),warning?'warning':'success');
+      const addressMode=()=>manualAddress?'已手动修改；变更完成日期时保留当前地址。':'已按规则生成，可手动修改。';
+      const cycle=date=>{const days=M.productionDays(d.requestDate,date);return days===null?(!urlRequired&&!d.requestDate?'':'待补充日期'):days<0?'完成日期早于下需日期':String(days);};
+      const required='<em class="required-mark">*</em>';
+      const materialField=mats.length>1
+        ?'<label class="vd-form-full">本次更新的素材记录 <select name="materialId" required>'+options(mats.map(m=>({value:m.id,label:m.name+' · '+m.id})),selected?.id||'','请选择历史素材记录')+'</select><small class="vd-warning">该需求有多份历史素材，选择本次要更新的记录；其余记录保留。</small></label>'
+        :'<input type="hidden" name="materialId" value="'+h(selected?.id||'')+'">';
+      const menuItems=M.executionStatuses.map(status=>'<button type="button" data-vd-flow-status="'+h(status)+'"'+(status===d.status?' aria-current="true"':'')+'>'+h(M.progressLabel(status))+'</button>').join('');
+      const body='<form id="vdVisualExecutionForm" class="dialog-wide-content vd-form-grid vd-visual-execution">'+
+        '<section class="vd-execution-priority vd-form-full"><div class="vd-execution-priority-fields">'+
+        '<label><span>进度状态</span><input name="status" readonly value="'+h(M.progressLabel(d.status))+'"></label>'+
+        '<label><span>完成日期 '+required+'</span><input type="date" name="completionDate" required value="'+h(defaults.completionDate)+'"></label></div></section>'+
+        '<label><span>版本 '+required+'</span><input name="version" required maxlength="200" value="'+h(defaults.version)+'" placeholder="例如：V1"></label>'+
+        '<label>制作周期 <div class="vd-cycle-control"><input name="productionDays" readonly value="'+h(cycle(defaults.completionDate))+'"><span>天</span></div>'+
+        '<small class="vd-type-help">下需日期：'+h(M.dateValue(d.requestDate)||(!urlRequired?'未填写，制作周期不计算':'待补充'))+'；按完成日期与下需日期的自然日差自动计算，同日为0天。</small></label>'+
+        materialField+namingField(d,defaults,'vdExecutionMaterialName')+
+        '<div class="vd-form-full vd-address-field"><label for="vdExecutionAddress">素材URL'+(urlRequired?' '+required:'')+'</label>'+
+        '<input id="vdExecutionAddress" name="url" type="text" '+(urlRequired?'required':'')+' maxlength="2048" value="'+h(address)+'" placeholder="支持局域网共享路径或 HTTP/HTTPS 链接">'+
+        '<div class="vd-address-actions"><small class="vd-type-help" id="vdExecutionAddressMode">'+h(addressMode())+'</small>'+
+        '<button type="button" class="text-button" data-vd-regenerate-address>按规则重新生成</button></div></div>'+
+        '<div id="vdExecutionStatusMenu" class="vd-execution-status-menu" popover role="group" aria-label="流转进度状态">'+menuItems+'</div></form>';
+      api.openDialog('执行需求',d.title+' · '+id,body,'流转进度状态',()=>{
+        const menu=$('#vdExecutionStatusMenu'),trigger=$('#dialogConfirm');
+        const rect=trigger.getBoundingClientRect();
+        menu.style.right=(window.innerWidth-rect.right)+'px';
+        menu.style.bottom=(window.innerHeight-rect.top+6)+'px';
+        menu.togglePopover({source:trigger});
+        if(menu.matches(':popover-open'))menu.querySelector('[aria-current]')?.focus();
       });
-      bindPostWarning($('#vdVisualExecutionForm'),d);
-      const update=()=>{const form=$('#vdVisualExecutionForm');if(!form)return;const days=M.productionDays(d.requestDate,form.elements.completionDate.value);const ownerRequired=M.isDemandFieldRequired({...d,status:form.elements.status.value},'owner');form.elements.owner.required=ownerRequired;$('#vdExecutionOwnerRequired').hidden=!ownerRequired;form.elements.productionDays.value=days===null?(d.demandType==='ad-team'&&!d.requestDate?'':'待补充日期'):days<0?'完成日期早于下需日期':String(days);updateNamingField(d,form,'vdExecutionMaterialName');if(!manualAddress)form.elements.url.value=generated(form.elements.completionDate.value,form.elements.owner.value);$('#vdExecutionAddressMode').textContent=manualAddress?'已手动修改；变更制作人或日期时保留当前地址。':'已按规则生成，可手动修改。';};
-      $('#dialogBody').oninput=event=>{if(event.target.name==='url'){manualAddress=true;update();}else if(['completionDate','owner','version'].includes(event.target.name))update();};
-      $('#dialogBody').onchange=event=>{if(['status','completionDate','owner','version'].includes(event.target.name))update();};
-      $('#dialogBody').onclick=event=>{if(event.target.closest('[data-vd-regenerate-address]')){manualAddress=false;update();}};
-      $('#vdVisualExecutionForm select[name="status"]').focus();
+      const form=$('#vdVisualExecutionForm'),menu=$('#vdExecutionStatusMenu');
+      const update=()=>{
+        const {completionDate,version,productionDays,url}=form.elements;
+        productionDays.value=cycle(completionDate.value);
+        $('#vdExecutionMaterialName').innerHTML=api.namingPreviewMarkup(namingState(d,{owner:defaults.owner,completionDate:completionDate.value,version:version.value}));
+        if(!manualAddress)url.value=generated(completionDate.value);
+        $('#vdExecutionAddressMode').textContent=addressMode();
+      };
+      form.oninput=event=>{
+        if(event.target.name==='url')manualAddress=true;
+        if(['url','completionDate','version'].includes(event.target.name))update();
+      };
+      form.onsubmit=event=>{event.preventDefault();$('#dialogConfirm').click();};
+      form.onclick=event=>{
+        if(event.target.closest('[data-vd-regenerate-address]')){manualAddress=false;update();return;}
+        const choice=event.target.closest('[data-vd-flow-status]');
+        if(!choice)return;
+        menu.hidePopover();
+        if(!form.reportValidity())return;
+        const input=Object.fromEntries(new FormData(form));
+        input.status=choice.dataset.vdFlowStatus;
+        input.urlMode=manualAddress?'manual':'auto';
+        if(!commit(()=>{
+          store=readLatestBusiness();
+          const current=demand(id);
+          if(!current||window.VisualDemandGridModel.version(current)!==expectedVersion)throw new Error('需求已更新，请重新打开执行需求。');
+          M.saveDemandExecution(store,id,input,actor,[],namingState);
+        }))return;
+        api.closeDialog();render();
+        api.toast(input.status===d.status?'执行信息已保存':'进度状态已更新为「'+M.progressLabel(input.status)+'」');
+      };
+      form.elements.completionDate.focus();
     }
     function confirmDeleteDemand(id) {
       if(!guard('demand:manage'))return;const d=demand(id);if(!d)return;

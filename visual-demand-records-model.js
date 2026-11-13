@@ -4,6 +4,8 @@
   'use strict';
   const demandTypes = [{value:'visual-team',label:'视觉组制作'},{value:'ad-team',label:'投放组制作'}];
   const visualProgressStatuses = ['制作中','已完成','项目暂停','待制作','待分配'];
+  const executionStatuses = ['待制作','制作中','已完成','项目暂停'];
+  const progressLabel = status => status==='项目暂停'?'暂停':status;
   const legacyStatuses = ['待处理','进行中','已交付','已关闭','已取消'];
   const statuses = visualProgressStatuses;
   const transitions = Object.fromEntries(statuses.map(status=>[status,['已完成','项目暂停'].includes(status)?[status]:statuses]));
@@ -162,7 +164,7 @@
     if(statuses.includes(status))return status;
     if(['已交付','已关闭'].includes(status))return '已完成';
     if(['进行中','任务处理中'].includes(status))return '制作中';
-    if(['已取消','项目暂停'].includes(status))return '项目暂停';
+    if(['已取消','暂停'].includes(status))return '项目暂停';
     return initialProgressStatus(owner);
   }
   const sharedRequiredFields = new Set(['title','spu','channelCategory','materialType','expression','mainSellingPoint','scene','materialCategory']);
@@ -190,6 +192,7 @@
     return d;
   }
   const canModifyDemand = demand => Boolean(demand)&&!demand.deletedAt&&!['已完成','项目暂停'].includes(canonicalProgressStatus(demand.status,demand.owner));
+  const canExecuteDemand = demand => Boolean(demand)&&!demand.deletedAt&&demand.submissionState!=='draft'&&['待制作','制作中','项目暂停'].includes(canonicalProgressStatus(demand.status,demand.owner));
   function assertDemandMutable(demand) {if(demand?.deletedAt)throw new Error('需求已删除，不能修改。');if(!canModifyDemand(demand))throw new Error('已完成或项目暂停的需求不允许修改。');}
   const adTeamDemandFormSections=[
     {title:'基础信息',fields:['title','spu','channelCategory','materialType','requestDate','ddl']},
@@ -224,13 +227,15 @@
   }
   function saveDemandExecution(store,demandId,input,actor='管理员',validOwners=[],namingProvider=null) {
     const d=store.demands.find(v=>v.id===demandId);if(!d)throw new Error('需求不存在。');
-    assertDemandMutable(d);
+    if(!canExecuteDemand(d))assertDemandMutable(d);
     if(d.submissionState==='draft')throw new Error('请先提交需求，再执行制作。');
     if(d.status==='待分配')throw new Error('请先分配制作人，再执行需求。');
     if(!demandTypes.some(type=>type.value===d.demandType))throw new Error('请先补充需求类型。');
-    const status=String(input.status||''),owner=String(input.owner||'').trim(),version=String(input.version||'').trim(),completionDate=String(input.completionDate||''),url=String(input.url||'').trim();
-    if(!visualProgressStatuses.includes(status))throw new Error('请选择有效的进度状态。');
-    validateProducer(d,owner,validOwners,isDemandFieldRequired({...d,status},'owner'));
+    const preserveOwner=!Object.hasOwn(input,'owner');
+    const owner=preserveOwner?String(d.owner??''):String(input.owner||'').trim();
+    const status=String(input.status||''),version=String(input.version||'').trim(),completionDate=String(input.completionDate||''),url=String(input.url||'').trim();
+    if(!(preserveOwner?executionStatuses:visualProgressStatuses).includes(status))throw new Error('请选择有效的进度状态。');
+    if(!preserveOwner)validateProducer(d,owner,validOwners,isDemandFieldRequired({...d,status},'owner'));
     if(!version||version.length>200)throw new Error('请填写版本，最多200个字符。');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(completionDate)||dateValue(completionDate)!==completionDate)throw new Error('请选择有效的完成日期。');
     const days=productionDays(d.requestDate,completionDate);
@@ -256,11 +261,13 @@
       else{material={id:uid('MAT'),demandId,name:d.title,type:({IMG:'图片',VID:'视频',GIF:'GIF'}[d.materialType]||d.materialType||'图片'),originalCode:'',sourceType:'人工制作',source:{system:'PLATFORM'},createdAt:at,...metadata};store.materials.push(material);}
       d.executionMaterialId=material.id;
     }
-    appendLog(d,'执行需求',previous+' → '+status+'；制作人：'+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+(days===null?'未计算':days+'天')+(material?'；素材：'+material.id:''),actor);
+    appendLog(d,'执行需求',progressLabel(previous)+' → '+progressLabel(status)+'；制作人：'+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+(days===null?'未计算':days+'天')+(material?'；素材：'+material.id:''),actor);
     return {demand:d,material:material||null};
   }
   function saveVisualExecution(store,demandId,input,actor='管理员',validOwners=[]) {
-    if(store.demands.find(d=>d.id===demandId)?.demandType!=='visual-team')throw new Error('该执行表单仅适用于视觉组制作需求。');
+    const demand=store.demands.find(d=>d.id===demandId);
+    if(demand?.demandType!=='visual-team')throw new Error('该执行表单仅适用于视觉组制作需求。');
+    assertDemandMutable(demand);
     return saveDemandExecution(store,demandId,input,actor,validOwners);
   }
   function demandDeliverySummary(store,demandId) {
@@ -627,7 +634,7 @@
     const batch={id:batchId,at,actor,entity:input.entity,baseId:input.baseId,tableId:input.tableId,fileName:input.fileName||'',total:plans.length,imported,skipped:plans.filter(p=>p.outcome==='skip').length,issues:plans.filter(p=>p.outcome==='issue').map(p=>({line:p.line,sourceRecordId:p.source.recordId,reason:p.reason,rawSnapshot:p.source.rawSnapshot})),mapping:clone(input.mapping)};
     store.batches.unshift(batch);return batch;
   }
-  const api={META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,googleMaterialName,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
+  const api={executionStatuses,progressLabel,canExecuteDemand,META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,googleMaterialName,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandRecordsModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 
