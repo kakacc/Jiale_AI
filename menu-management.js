@@ -3,6 +3,65 @@
 /* Local menu/permission catalog prototype; it never submits to the BI platform. */
 (() => {
   'use strict';
+  const visualDemandMenuId = 'AI-DEMANDS';
+  const findVisualDemandMenu = items => items.find(item => item.id === visualDemandMenuId ||
+    (item.parentId === 'AI-ROOT' && item.code === 'ai-material:visual-demand'));
+
+  function upgradeVisualDemandPermissions(savedItems, seedItems) {
+    const seedMenu = findVisualDemandMenu(seedItems);
+    const menu = findVisualDemandMenu(savedItems);
+    if (!menu) return savedItems;
+
+    const existing = savedItems.filter(item => item.parentId === menu.id && item.type === 'button');
+    const permissions = seedItems.filter(item => item.parentId === seedMenu.id && item.permissionPoint);
+    const remappedCodes = new Map();
+    const replacedIds = new Set([menu.id]);
+    const migrated = permissions.map(point => {
+      const matches = existing.filter(item => !replacedIds.has(item.id) && (
+        item.id === point.id || item.code === point.code || item.name === point.name ||
+        (point.code === 'demand:config:manage' && item.name === '配置维度选项')
+      ));
+      for (const match of matches) {
+        remappedCodes.set(match.code, [point.code]);
+        replacedIds.add(match.id);
+      }
+      const previous = matches.find(item => item.code === point.code) || matches[0];
+      return { ...point, parentId: menu.id, id: previous?.id || point.id, i18n: previous?.i18n || point.i18n };
+    });
+    const demandOperations = permissions.filter(point => point.requires.includes('demand:view')).map(point => point.code);
+    for (const item of existing.filter(item => item.code === 'demand:manage' || item.id === 'POINT-DEMAND-MANAGE' || item.name === '管理视觉需求')) {
+      remappedCodes.set(item.code, [...demandOperations, 'demand:config:manage']);
+      replacedIds.add(item.id);
+    }
+    const updatedMenu = menu.code === 'ai:demands'
+      ? { ...menu, ...seedMenu, id: menu.id, i18n: menu.i18n || seedMenu.i18n }
+      : menu;
+    const retained = savedItems.filter(item => !replacedIds.has(item.id)).map(item => {
+      if (!item.requires?.some(code => remappedCodes.has(code))) return item;
+      return { ...item, requires: [...new Set(item.requires.flatMap(code => remappedCodes.get(code) || [code]))] };
+    });
+    return [...retained, updatedMenu, ...migrated];
+  }
+
+  function addMaterialNamingPermission(savedItems, seedItems) {
+    const menu = findVisualDemandMenu(savedItems);
+    const create = seedItems.find(item => item.id === 'POINT-DEMAND-MATERIAL-NAMING-CREATE');
+    const manage = seedItems.find(item => item.id === 'POINT-DEMAND-NAMING-MANAGE');
+    if (!menu || savedItems.some(item => item.id === create.id || item.code === create.code)) return savedItems;
+
+    const requires = create.requires.map(code => {
+      const seed = seedItems.find(item => item.code === code);
+      return savedItems.find(item => item.parentId === menu.id && (item.id === seed.id || item.code === code))?.code;
+    });
+    if (requires.some(code => !code)) return savedItems;
+
+    const oldNote = '从素材页批量创建 Meta Ads、Google Ads 广告命名，支持 Google Ads 直接新增及两种平台的广告命名编辑。从素材页创建还需查看素材。';
+    const updated = savedItems.map(item => item.parentId === menu.id && item.code === manage.code && item.note === oldNote
+      ? { ...item, note: manage.note }
+      : item);
+    return [...updated, { ...create, parentId: menu.id, requires }];
+  }
+
   window.createMenuManagement = api => {
     const $ = id => document.getElementById(id);
     const html = api.escapeHtml;
@@ -11,14 +70,23 @@
     let items = clone(window.aiMenuManagementSeed);
     try {
       const saved = JSON.parse(localStorage.getItem(key) || 'null');
-      if (saved?.version === 1 && Array.isArray(saved.items) && saved.items.some(item => item.id === 'AI-ROOT')) items = saved.items;
+      if (Array.isArray(saved?.items) && saved.items.some(item => item.id === 'AI-ROOT')) {
+        if (saved.version === 1) items = upgradeVisualDemandPermissions(saved.items, items);
+        if (saved.version === 2) items = addMaterialNamingPermission(saved.items, items);
+        if (saved.version === 3) {
+          const point = items.find(item => item.id === 'POINT-DEMAND-MATERIAL-NAMING-CREATE');
+          const oldNote = '控制「素材」页勾选素材后的「批量创建广告命名」，支持 Meta Ads 和 Google Ads。创建前需具有查看素材和查看广告命名权限。';
+          items = saved.items.map(item => item.id === point.id && item.note === oldNote ? { ...item, note: point.note } : item);
+        }
+      }
     } catch {}
-    let selectedId = items.some(item => item.id === 'AI-TASKS') ? 'AI-TASKS' : items[0]?.id;
+    const visualDemand = findVisualDemandMenu(items);
+    let selectedId = visualDemand?.id || (items.some(item => item.id === 'AI-TASKS') ? 'AI-TASKS' : items[0]?.id);
     let newItem = null;
     let draft = null;
     const drafts = new Map();
     const removedButtons = new Map();
-    const expanded = new Set(['AI-ROOT','AI-TASKS']);
+    const expanded = new Set(['AI-ROOT', selectedId]);
     const types = [['menu','菜单'],['button','按钮'],['external','外链'],['iframe','iFrame']];
     const find = id => items.find(item => item.id === id);
     const children = id => items.filter(item => item.parentId === id).sort((a,b) => Number(a.sort)-Number(b.sort));
@@ -114,7 +182,7 @@
       return true;
     }
     function persist(next) {
-      try { localStorage.setItem(key,JSON.stringify({version:1,items:next})); }
+      try { localStorage.setItem(key,JSON.stringify({version:3,items:next})); }
       catch {api.toast('保存失败，请检查浏览器存储空间','warning');return false;}
       items=next;return true;
     }

@@ -366,9 +366,6 @@
     const category=material.materialCategory||demand?.materialCategory||'';
     return {spu:existing?.spuSnapshot??material.spu??demand?.spu??'',completionDate:existing?.completionDateSnapshot||(material.deliveredAt||material.completionDate||demand?.completionDate||''),materialId:material.id,materialCategory:existing?.materialCategorySnapshot??(config.categoryCode?config.categoryCode(category):category)};
   }
-  function googleMaterialName(material,demand,config={}) {
-    return String(config.displayMaterialName?.(material,demand)||material.name||material.id).trim().slice(0,2048);
-  }
   function advertisingTimestamp(value) {
     const match=String(value??'').trim().match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?$/);
     if(!match||dateValue(match[1])!==match[1]||+match[2]>23||+match[3]>59||+(match[4]||0)>59)return '';
@@ -386,6 +383,7 @@
     const creatingStandalone=!existing&&!materialId&&config.allowStandalone;
     if(creatingStandalone&&platform!==GOOGLE_ADS)throw new Error('独立新增广告命名的投放平台固定为 Google Ads。');
     if(!platform)throw new Error('请选择 Meta Ads 或 Google Ads。');
+    if(!existing&&platform===GOOGLE_ADS&&!creatingStandalone)throw new Error('请在「广告命名」页切换至 Google Ads 后手动新增。');
     if(existing&&(normalizeAdvertisingPlatform(existing.platform)||META_ADS)!==platform)throw new Error('已创建的广告命名不能更改投放平台。');
     const landingPage=text('landingPage'),promoter=text('promoter'),adId=text('adId'),remark=text('remark',1500);
     if(!landingPage)throw new Error('请填写落地页。');
@@ -409,32 +407,27 @@
       const material=standalone?null:store.materials.find(m=>m.id===materialId&&!m.deletedAt);
       if(!standalone&&!material)throw new Error('素材关联无效或已删除，请重新选择素材。');
       const demand=material?store.demands.find(d=>d.id===material.demandId):null;
-      const adCreatedAt=config.fromMaterialBatch?at.slice(0,10):advertisingDate(input.adCreatedAt);
-      const materialUrl=config.fromMaterialBatch?String(material?.url??'').trim():text('materialUrl',2048);
+      const adCreatedAt=advertisingDate(input.adCreatedAt);
+      const materialUrl=text('materialUrl',2048);
       if(!adCreatedAt)throw new Error('请填写有效的广告创建时间。');
       const urlRequired=googleAdRequiresMaterialUrl(materialId,existing?.materialUrl);
-      if(!config.fromMaterialBatch&&(urlRequired||materialUrl)&&!isMaterialAddress(materialUrl))throw new Error('请填写有效的素材URL（HTTP/HTTPS 链接或局域网共享路径）。');
+      if((urlRequired||materialUrl)&&!isMaterialAddress(materialUrl))throw new Error('请填写有效的素材URL（HTTP/HTTPS 链接或局域网共享路径）。');
       const account=existing?.adAccountId?advertisingAccount(existing):googleAdvertisingAccount;
       if((creatingStandalone||input.adAccountId)&&input.adAccountId!==account.value)throw new Error('Google Ads 广告账户不可更改。');
       const generatesName=creatingStandalone||existing?.namingRuleVersion===googleAdvertisingNameRuleVersion;
-      const materialValue=(key,fallback)=>config.fromMaterialBatch?String(fallback??'').trim().slice(0,200):text(key);
       const usesOptions=generatesName||Array.isArray(existing?.sublevelType);
       const sublevelType=usesOptions?googleAdFieldValues(input.sublevelType):text('sublevelType');
       const previousCategory=existing?advertisingMaterialCategory(existing,material,demand):'';
-      const sourceCategory=advertisingMaterialCategory(null,material,demand);
-      const category=config.fromMaterialBatch?materialValue('materialCategory',config.categoryCode?.(sourceCategory)??sourceCategory):
-        existing&&input.materialCategory===undefined?previousCategory:text('materialCategory');
-      const fields={campaignType:text('campaignType'),sublevelType,spu:materialValue('spu',material?.spu??demand?.spu),materialCategory:category,materialVersion:materialValue('materialVersion',material?.version??demand?.version)};
+      const category=existing&&input.materialCategory===undefined?previousCategory:text('materialCategory');
+      const fields={campaignType:text('campaignType'),sublevelType,spu:text('spu'),materialCategory:category,materialVersion:text('materialVersion')};
       if(generatesName){
         const missing=Object.keys(googleAdvertisingFields).filter(key=>!googleAdFieldValues(fields[key]).length).map(key=>googleAdvertisingFields[key]);
         if(missing.length)throw new Error('请填写：'+missing.join('、'));
       }
-      if(!config.fromMaterialBatch){
-        for(const key of usesOptions?googleAdvertisingMultiKeys:['materialCategory']){
-          const previous=key==='materialCategory'?previousCategory:existing?.[key];
-          const allowed=[...(config.googleOptions?.[key]||[]),...googleAdFieldValues(previous)];
-          if((key!=='sublevelType'&&Array.isArray(input[key]))||googleAdFieldValues(fields[key]).some(value=>!allowed.includes(value)))throw new Error('请选择有效的'+googleAdvertisingFields[key]+'。');
-        }
+      for(const key of usesOptions?googleAdvertisingMultiKeys:['materialCategory']){
+        const previous=key==='materialCategory'?previousCategory:existing?.[key];
+        const allowed=[...(config.googleOptions?.[key]||[]),...googleAdFieldValues(previous)];
+        if((key!=='sublevelType'&&Array.isArray(input[key]))||googleAdFieldValues(fields[key]).some(value=>!allowed.includes(value)))throw new Error('请选择有效的'+googleAdvertisingFields[key]+'。');
       }
       let adName;
       if(generatesName){
@@ -443,7 +436,7 @@
         if(generated.name.length>2048)throw new Error('生成的广告名称最多2048个字符，请缩短命名字段。');
         adName=generated.name;
       }else{
-        adName=config.fromMaterialBatch?googleMaterialName(material,demand,config):text('adName',2048);
+        adName=text('adName',2048);
         if(!adName)throw new Error('请填写广告名称。');
       }
       const {spu,materialCategory,...details}=fields;
@@ -459,10 +452,11 @@
   function createAdvertisingNamings(store,materialIds,input,actor='管理员',config={}) {
     const ids=[...new Set(materialIds)];
     if(!ids.length)throw new Error('请先勾选素材。');
+    if(normalizeAdvertisingPlatform(input.platform)!==META_ADS)throw new Error('从素材批量创建的投放平台固定为 Meta Ads。');
     const eligible=new Set(materialRows(store).map(row=>row.material.id));
     if(ids.some(id=>!eligible.has(id)))throw new Error('仅支持已完成需求产生的有效素材，请刷新后重新选择。');
     const next=clone(store),values={...input};delete values.id;
-    const records=ids.map(id=>saveAdvertisingNaming(next,id,values,actor,{...config,fromMaterialBatch:true}));
+    const records=ids.map(id=>saveAdvertisingNaming(next,id,values,actor,config));
     store.namings=next.namings;return records;
   }
   function deleteMaterials(store,materialIds,actor='管理员') {
@@ -634,7 +628,7 @@
     const batch={id:batchId,at,actor,entity:input.entity,baseId:input.baseId,tableId:input.tableId,fileName:input.fileName||'',total:plans.length,imported,skipped:plans.filter(p=>p.outcome==='skip').length,issues:plans.filter(p=>p.outcome==='issue').map(p=>({line:p.line,sourceRecordId:p.source.recordId,reason:p.reason,rawSnapshot:p.source.rawSnapshot})),mapping:clone(input.mapping)};
     store.batches.unshift(batch);return batch;
   }
-  const api={executionStatuses,progressLabel,canExecuteDemand,META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,googleMaterialName,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
+  const api={executionStatuses,progressLabel,canExecuteDemand,META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandRecordsModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 

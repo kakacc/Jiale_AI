@@ -10,7 +10,7 @@
     const materialSelection=new Set();
     const materialDeleteHint='仅支持批量删除未创建过广告命名的素材，请先取消勾选广告命名数>0的素材';
     const googleAdMultiFields=Object.entries(M.googleAdvertisingMultiFilters);
-    const namingConfig=()=>({displayMaterialName:(m,d)=>materialNaming(m,d).name||m.name,users:api.users.map(u=>u.name),pageValues:api.adOptions('adPage').map(o=>o.value),sourceValues:api.adOptions('adMaterialSource').map(o=>o.value),googleOptions:Object.fromEntries(googleAdMultiFields.map(([key])=>[key,api.adOptions(key).map(o=>o.value)])),producerInitials:api.producerInitials,categoryCode:value=>api.optionCode('materialCategory',value)});
+    const namingConfig=()=>({users:api.users.map(u=>u.name),pageValues:api.adOptions('adPage').map(o=>o.value),sourceValues:api.adOptions('adMaterialSource').map(o=>o.value),googleOptions:Object.fromEntries(googleAdMultiFields.map(([key])=>[key,api.adOptions(key).map(o=>o.value)])),producerInitials:api.producerInitials,categoryCode:value=>api.optionCode('materialCategory',value)});
     function readLatestBusiness(){const saved=localStorage.getItem(KEY);if(!saved)throw new Error('记录已更新，请刷新后重试。');const next=JSON.parse(saved);if(next.version!==1||!['demands','materials','namings','batches'].every(k=>Array.isArray(next[k])))throw new Error('记录无法读取，请刷新后重试。');return next;}
     const can=code=>api.currentUser.isOrgAdmin||api.currentUser.permissions?.includes(code);
     const guard=code=>{if(can(code))return true;api.toast('当前账号没有此操作权限','warning');return false;};
@@ -248,12 +248,12 @@
         '<label>推广人<select name="promoter">'+options(promoters,adFilters.promoter)+'</select></label>'+rangeMarkup(google?'created':'completion',google?'广告创建时间':'素材完成日期',adFilters);
       const headers=google?googleColumns:metaColumns,widths=google?[270,120,120,120,130,100,145,100,165,170,150,130,150]:[300,120,100,130,130,220,170,100,120,150,140,150];
       const platformChoices=M.advertisingPlatforms.map(platform=>'<label class="vd-ad-platform-choice"><input type="radio" name="platform" form="vdAdvertisingFilter" data-vd-ad-platform value="'+h(platform)+'" required'+(platform===adFilters.platform?' checked':'')+'><span>'+h(platform)+'</span></label>').join('');
-      const platformHint=google?'按广告创建时间筛选，可在此新增或从「素材」批量创建。':'按素材完成日期筛选，可从「素材」批量创建。';
+      const platformHint=google?'按广告创建时间筛选，点击「新增」手动创建。':'按素材完成日期筛选，可从「素材」批量创建。';
       return '<div class="vd-ad-platform-bar"><span id="vdAdPlatformLabel">投放平台</span><div class="vd-ad-platform-choices" role="radiogroup" aria-labelledby="vdAdPlatformLabel" aria-describedby="vdAdPlatformHint" aria-controls="vdAdPlatformContent" data-runtime-copy>'+platformChoices+'</div><span id="vdAdPlatformHint" class="vd-ad-platform-hint" data-runtime-copy>'+platformHint+'</span></div>'+
         '<section id="vdAdPlatformContent" aria-label="'+h(adFilters.platform)+' 广告命名"><form id="vdAdvertisingFilter" class="vd-filters vd-ad-filters">'+fields+'<div class="vd-ad-filter-footer"><span id="vdAdFilterSaveState" class="vd-filter-save-state">'+h(adFilterSaveLabel())+'</span><div class="vd-filter-actions"><button class="button primary" type="submit">搜索</button><button class="button secondary" type="button" data-vd-action="reset-ads">重置</button><button class="button secondary" type="button" data-vd-action="save-ad-filters" '+(!adPreferenceKey?'disabled':'')+'>保存筛选</button></div></div></form>'+
         '<div class="vd-record-toolbar vd-ad-record-toolbar"><div class="vd-ad-tools">'+(google&&can('demand:naming:manage')?'<button class="button primary" data-vd-action="new-google-ad">新增</button>':'')+'<button class="button secondary" data-vd-action="export">导出</button></div><span class="vd-ad-count" data-runtime-copy>共 '+rows.length+' 条广告命名</span></div>'+
         '<div class="vd-table-scroll" data-runtime-copy><table class="vd-table vd-ad-table vd-ad-table-v24'+(google?' vd-google-ad-table':'')+'"><colgroup>'+widths.map(width=>'<col style="width:'+width+'px">').join('')+'</colgroup><thead><tr>'+[...headers,'操作'].map(title=>'<th>'+title+'</th>').join('')+'</tr></thead><tbody>'+rows.slice((adPage-1)*10,adPage*10).map(r=>adRow(r,google)).join('')+'</tbody></table></div>'+
-        (rows.length?'':'<div class="vd-empty" role="status" data-runtime-copy>暂无符合条件的广告命名。'+(google?'点击「新增」录入，或在「素材」页签批量创建。':'可在「素材」页签勾选素材，批量创建广告命名。')+'</div>')+
+        (rows.length?'':'<div class="vd-empty" role="status" data-runtime-copy>暂无符合条件的广告命名。'+(google?'点击「新增」录入。':'可在「素材」页签勾选素材，批量创建广告命名。')+'</div>')+
         '<div class="vd-pagination" data-runtime-copy><span>共 '+rows.length+' 条，每页 10 条</span><button class="button" data-vd-ad-page="'+(adPage-1)+'" '+(adPage===1?'disabled':'')+'>上一页</button><span>'+adPage+' / '+pages+'</span><button class="button" data-vd-ad-page="'+(adPage+1)+'" '+(adPage===pages?'disabled':'')+'>下一页</button></div>'+
         (unlinked.length?'<details class="vd-unlinked-ads"><summary>'+unlinked.length+' 条历史广告待关联素材</summary><p>历史记录已保留；继续使用前请由研发核对素材ID，也可删除无效广告。</p><ul>'+unlinked.map(n=>'<li>'+h(n.adName||'未命名')+' · '+h(n.id)+' <button class="table-link vd-delete-ad" data-vd-ad-delete="'+h(n.id)+'" '+(!can('demand:naming:manage')?'disabled':'')+'>删除</button></li>').join('')+'</ul></details>':'')+'</section>';
     }
@@ -526,8 +526,8 @@
       return namingSelect('adPage','投放主页',withHistory('adPage',n.adPage),n.adPage)+namingSelect('materialSource','素材来源',withHistory('adMaterialSource',n.materialSource),n.materialSource)+
         namingInput('landingPage','落地页',n.landingPage,true,'text',200,'输入落地页')+namingSelect('promoter','推广人',promoterOptions(),n.promoter)+accountField(M.META_ADS,n)+namingInput('adId','广告ID',n.adId,false,'text',200,'选填');
     }
-    function googleFields(n={}, {fromMaterialBatch=false,materialUrlRequired=true}={}) {
-      const deliveryFields=fromMaterialBatch?'':namingInput('adCreatedAt','广告创建时间',M.dateValue(n.adCreatedAt||M.now()),true,'date')+
+    function googleFields(n={}, {materialUrlRequired=true}={}) {
+      const deliveryFields=namingInput('adCreatedAt','广告创建时间',M.dateValue(n.adCreatedAt||M.now()),true,'date')+
         namingInput('materialUrl','素材URL',n.materialUrl,materialUrlRequired,'text',2048,materialUrlRequired?'输入素材URL':'输入素材URL（选填）');
       return namingInput('landingPage','落地页',n.landingPage,true,'text',200,'输入落地页')+namingSelect('promoter','推广人',promoterOptions(),n.promoter)+
         deliveryFields+accountField(M.GOOGLE_ADS,n)+namingInput('adId','广告ID',n.adId,false,'text',200,'选填');
@@ -539,36 +539,27 @@
     function batchNaming() {
       if(!guard('demand:naming:manage'))return;
       const selected=materialFiltered().filter(r=>materialSelection.has(r.material.id));if(!selected.length)return;
-      const ids=selected.map(r=>r.material.id),drafts={};
-      let platform=M.META_ADS;
-      api.openDialog('批量创建广告命名','已选择 '+ids.length+' 份素材','<form id="vdBatchNamingForm" class="dialog-wide-content vd-form-grid vd-ad-naming-form"><p class="vd-form-full vd-type-help">落地页、推广人等信息将应用到所有选中素材，标 * 的字段必填。</p><div class="vd-form-full">'+namingSelect('platform','投放平台',M.advertisingPlatforms,platform,true,null)+'</div><div id="vdNamingPlatformFields" class="vd-platform-form-fields">'+metaFields({promoter:actor})+'</div><section class="vd-form-full vd-batch-naming-preview"><h3>广告命名预览</h3><div id="vdBatchNamingPreview" data-runtime-copy></div></section></form>','创建 '+ids.length+' 条广告命名',()=>{
+      const ids=selected.map(r=>r.material.id);
+      const platformField='<label class="vd-form-full">'+fieldLabel('投放平台',true)+'<input name="platform" value="'+M.META_ADS+'" readonly></label>';
+      api.openDialog('批量创建广告命名','已选择 '+ids.length+' 份素材','<form id="vdBatchNamingForm" class="dialog-wide-content vd-form-grid vd-ad-naming-form"><p class="vd-form-full vd-type-help">落地页、推广人等信息将应用到所有选中素材，标 * 的字段必填。</p>'+platformField+'<div id="vdNamingPlatformFields" class="vd-platform-form-fields">'+metaFields({promoter:actor})+'</div><section class="vd-form-full vd-batch-naming-preview"><h3>广告命名预览</h3><div id="vdBatchNamingPreview" data-runtime-copy></div></section></form>','创建 '+ids.length+' 条广告命名',()=>{
         const form=$('#vdBatchNamingForm');if(!validateNamingForm(form))return;
         const input=readNamingInput(form);
         if(!commit(()=>{store=readLatestBusiness();M.createAdvertisingNamings(store,ids,input,actor,namingConfig());}))return;
-        materialSelection.clear();showSavedAdvertising(input.platform,'已创建 '+ids.length+' 条广告命名');
+        materialSelection.clear();showSavedAdvertising(M.META_ADS,'已创建 '+ids.length+' 条广告命名');
       });
       const form=$('#vdBatchNamingForm');
       const update=()=>{
         const input=readNamingInput(form),config=namingConfig();
         $('#vdBatchNamingPreview').innerHTML=selected.map(({material:m,demand:d})=>{
-          const state=platform===M.GOOGLE_ADS?{name:M.googleMaterialName(m,d,config)}:M.advertisingNameState({...M.advertisingNamingContext(store,m.id,null,config),...input,promoterCode:input.promoter?api.producerInitials(input.promoter):''});
-          const duplicate=state.name&&store.namings.some(n=>!n.deletedAt&&advertisingPlatform(n.platform)===platform&&n.adName===state.name);
+          const state=M.advertisingNameState({...M.advertisingNamingContext(store,m.id,null,config),...input,promoterCode:input.promoter?api.producerInitials(input.promoter):''});
+          const duplicate=state.name&&store.namings.some(n=>!n.deletedAt&&advertisingPlatform(n.platform)===M.META_ADS&&n.adName===state.name);
           const materialState=materialNaming(m,d);
           return '<div class="vd-batch-preview-item"><strong class="vd-ad-preview-name">'+api.namingPreviewMarkup(state)+'</strong><small class="vd-ad-preview-material">素材名称：'+(materialState.name?h(materialState.name):api.namingPreviewMarkup(materialState))+'</small>'+(duplicate?'<small class="vd-warning">已存在相同名称，仍可保存。</small>':'')+'</div>';
         }).join('');
       };
       bindNamingAccount(form,update);
-      form.oninput=event=>{if(event.target.name!=='platform')update();};
-      form.onchange=event=>{
-        if(event.target.name==='platform'){
-          const next=event.target.value,previous=readNamingInput(form);
-          previous.platform=platform;
-          drafts[platform]=previous;platform=next;
-          const shared={promoter:previous.promoter||actor,landingPage:previous.landingPage,adId:previous.adId},values=drafts[platform]||shared;
-          $('#vdNamingPlatformFields').innerHTML=platform===M.GOOGLE_ADS?googleFields(values,{fromMaterialBatch:true}):metaFields(values);
-        }
-        update();
-      };
+      form.oninput=update;
+      form.onchange=update;
       update();
     }
     function editGoogleNaming(existing=null,material=null) {
