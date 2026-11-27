@@ -10,6 +10,9 @@
     ['requirements','制作要求','long'],['reference','制作参考','reference'],['fbInfo','FB信息','long'],['edmInfo','EDM信息','long'],['requester','需求对接人','person'],['priority','优先级','select'],['owner','制作人','person']
   ].map(([key,label,type])=>({key,label,type}));
   const adFields=M.adTeamDemandFormSections.flatMap(x=>x.fields);
+  const compactFields=['title','spu','channelCategory','materialType','expression','mainSellingPoint','scene','materialCategory','owner'];
+  const compactDemandColumns=['submissionState','id','title','status','demandType',...compactFields.filter(key=>key!=='title'),
+    'completionDate','version','createdAt','creator','productionDays'];
   const commonFields=['title','spu','channelCategory','materialType','requestDate','ddl','requester','priority','owner'];
   const keyFields=fields.filter(f=>!['long','reference'].includes(f.type)&&!['secondarySellingPoint','bodyType'].includes(f.key)).map(f=>f.key);
   const isDraft=d=>d?.submissionState==='draft';
@@ -21,17 +24,44 @@
   function canViewDemand(d,actor){if(!d||d.deletedAt)return false;if(!isDraft(d))return true;const owner=draftIdentity(d),user=identity(actor);return owner.id?Boolean(user.id&&owner.id===user.id):Boolean(owner.name&&owner.name===user.name);}
   function assertDraftAccess(d,actor){if(isDraft(d)&&!canViewDemand(d,actor))throw new Error('草稿仅创建人可见和操作。');}
   function normalizeDraftOwnership(store,users=[]){let changed=false;for(const d of store.demands){if(!isDraft(d))continue;const owner=draftIdentity(d);if(!owner.id&&owner.name){const matches=users.filter(u=>u.name===owner.name);if(matches.length===1)owner.id=String(matches[0].id||'');}if(!owner.id&&!owner.name)continue;for(const [key,value] of Object.entries({draftOwnerId:owner.id,draftOwnerName:owner.name})){if(d[key]!==value){d[key]=value;changed=true;}}}return changed;}
-  function batchEligibility(records){
-    const sameType=records.length>0&&new Set(records.map(d=>d.demandType)).size===1&&M.demandTypes.some(t=>t.value===records[0].demandType),allDraft=records.length>0&&records.every(isDraft);
-    return {sameType,allDraft,editReason:sameType?'':'仅支持批量修改相同需求类型的数据',submitReason:allDraft?'':'仅支持批量提交行状态为草稿的数据，请先取消勾选已提交的数据'};
+  function batchEligibility(records,store){
+    const sameType=records.length>0&&new Set(records.map(d=>d.demandType)).size===1&&M.currentDemandTypes.some(t=>t.value===records[0].demandType),allDraft=records.length>0&&records.every(isDraft);
+    const allStored=records.length>0&&records.every(d=>!d.deletedAt&&(!store||store.demands.some(saved=>saved.id===d.id&&!saved.deletedAt)));
+    const productionType=sameType&&['visual-team','ad-team'].includes(records[0]?.demandType);
+    return {sameType,allDraft,
+      canEdit:allStored&&sameType&&records.every(d=>isDraft(d)||M.canModifyDemand(d)),
+      canCopy:allStored&&records.every(d=>M.currentDemandTypes.some(type=>type.value===d.demandType)),
+      canSubmit:allStored&&allDraft,
+      canDelete:allStored&&records.every(d=>!deleteRecordIssue(store,d)),
+      canAssign:allStored&&productionType&&records.every(d=>!isDraft(d)&&d.status==='待分配'),
+      canExecute:allStored&&sameType&&records.every(d=>
+        M.canExecuteDemand(d)||Boolean(store&&M.canReexecuteDemand(store,d))
+      ),
+      editReason:sameType?'':'仅支持批量修改相同需求类型的数据',submitReason:allDraft?'':'仅支持批量提交行状态为草稿的数据，请先取消勾选已提交的数据'};
   }
-  function batchFields(records){if(!batchEligibility(records).sameType)throw new Error('仅支持批量修改相同需求类型的数据');return fields.filter(f=>allowed(records[0],f.key)).map(f=>({...f,required:records.some(d=>M.isDemandFieldRequired(d,f.key))}));}
-  function sortDemands(records,sort='request-desc'){
-    const compare=sort==='ddl-asc'?(a,b)=>(a.ddl||'9999').localeCompare(b.ddl||'9999'):sort==='created-desc'?(a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''):sort==='id-asc'?(a,b)=>a.id.localeCompare(b.id):(a,b)=>(b.requestDate||'').localeCompare(a.requestDate||'')||(b.createdAt||'').localeCompare(a.createdAt||'');
-    return records.slice().sort((a,b)=>Number(isDraft(b))-Number(isDraft(a))||compare(a,b)||a.id.localeCompare(b.id));
+  function batchFields(records,byType=false){if(!batchEligibility(records).sameType)throw new Error('仅支持批量修改相同需求类型的数据');return fields.filter(f=>allowed(records[0],f.key,byType)).map(f=>({...f,required:records.some(d=>M.isDemandFieldRequired(d,f.key))}));}
+  function sortDemands(records,sort='request-desc',draftFirst=true){
+    const [field,direction]=sort.split('-');
+    const timestamp=value=>{
+      const date=M.dateValue(value);
+      const time=String(value||'').match(/[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+      return date?date+(time?' '+[time[1],time[2],time[3]||'00'].join(':'):''):'';
+    };
+    const dateSort=key=>(a,b)=>{
+      const left=key==='createdAt'?timestamp(a[key]):M.dateValue(a[key]);
+      const right=key==='createdAt'?timestamp(b[key]):M.dateValue(b[key]);
+      return Number(!left)-Number(!right)||(left||'').localeCompare(right||'')*(direction==='asc'?1:-1);
+    };
+    const compare=field==='completion'?dateSort('completionDate'):field==='created'?dateSort('createdAt'):
+      sort==='ddl-asc'?(a,b)=>(a.ddl||'9999').localeCompare(b.ddl||'9999'):sort==='id-asc'?(a,b)=>a.id.localeCompare(b.id):
+        (a,b)=>(b.requestDate||'').localeCompare(a.requestDate||'')||(b.createdAt||'').localeCompare(a.createdAt||'');
+    return records.slice().sort((a,b)=>(draftFirst?Number(isDraft(b))-Number(isDraft(a)):0)||compare(a,b)||a.id.localeCompare(b.id));
   }
   const version=d=>JSON.stringify(d||null);
-  const allowed=(d,key)=>fields.some(f=>f.key===key)&&(d.demandType!=='ad-team'||adFields.includes(key));
+  const allowed=(d,key,byType=false)=>{
+    if(byType&&M.isCompactDemandType(d.demandType))return compactFields.includes(key);
+    return fields.some(f=>f.key===key)&&(d.demandType!=='ad-team'||adFields.includes(key));
+  };
   const fieldKeysForType=type=>(type==='ad-team'?adFields:fields.map(f=>f.key)).slice();
   function referenceValue(d){return {text:String(d?.reference||''),items:M.clone(d?.referenceItems||[])};}
   function normalizeReference(value){
@@ -61,14 +91,14 @@
     if(rows.length>1000)throw new Error('一次最多粘贴1000行，请拆分操作。');return rows;
   }
   function normalize(field,value,config,d){
-    let v=String(value??'').trim();const f=fields.find(f=>f.key===field);if(!f||!allowed(d,field))throw new Error('该字段只读或不适用于此需求类型。');
+    let v=String(value??'').trim();const f=fields.find(f=>f.key===field);if(!f||!allowed(d,field,config.byType))throw new Error('该字段只读或不适用于此需求类型。');
     if(f.type==='reference'&&value&&typeof value==='object')return normalizeReference(value);
     const max=field==='title'?120:['long','reference'].includes(f.type)?1500:200;if(v.length>max)throw new Error(f.label+'最多'+max+'个字符。');
     if(!v)return '';
     if(f.type==='date'){const date=M.dateValue(v);if(!date)throw new Error(f.label+'格式无效，请使用YYYY-MM-DD。');return date;}
-    if(f.type==='person'){if(field==='owner'&&M.usesPostNumber(d.expression))M.validateProducer(d,v,config.users||[],false);else if(!(config.users||[]).includes(v))throw new Error(f.label+'不存在，请选择平台人员。');}
+    if(f.type==='person'){if(field==='owner'&&M.usesDemandPostNumber(d,config.byType))M.validateProducer(d,v,config.users||[],false,config.byType);else if(!(config.users||[]).includes(v))throw new Error(f.label+'不存在，请选择平台人员。');}
     if(f.type==='select'){
-      const values=config.options(field,d),current=config.optionCode?.(field,v)||v;
+      const values=config.options(field,d),current=config.optionCode?.(field,v,d.demandType)||v;
       const exact=values.find(o=>o.value===current);if(exact)return exact.value;
       const matches=values.filter(o=>o.label===v);
       if(matches.length!==1)throw new Error(f.label+'不是有效选项，请核对配置。');return matches[0].value;
@@ -77,17 +107,17 @@
   }
   function requiredIssues(d,config){
     const issues=[];
-    if(!M.demandTypes.some(t=>t.value===d.demandType))issues.push('请选择需求类型');
-    fields.filter(f=>allowed(d,f.key)&&M.isDemandFieldRequired(d,f.key)).forEach(f=>{
-      if(!String(d[f.key]||'').trim())issues.push(f.label+'不能为空');
+    if(!M.currentDemandTypes.some(t=>t.value===d.demandType))issues.push('请选择需求类型');
+    fields.filter(f=>allowed(d,f.key,config.byType)&&M.isDemandFieldRequired(d,f.key)).forEach(f=>{
+      if(!String(d[f.key]||'').trim())issues.push((f.key==='owner'&&d.demandType===M.influencerDemandType?'帖子编号':f.label)+'不能为空');
       else if(f.key!=='owner')try{normalize(f.key,d[f.key],config,d);}catch(e){issues.push(e.message);}
     });
-    if(d.owner)try{M.validateProducer(d,d.owner,config.users||[],false);}catch(error){issues.push(error.message);}
-    if(d.requestDate&&d.ddl&&d.requestDate>d.ddl)issues.push('DDL不能早于下需时间');
+    if(d.owner)try{M.validateProducer(d,d.owner,config.users||[],false,config.byType);}catch(error){issues.push(error.message);}
+    if(allowed(d,'requestDate',config.byType)&&d.requestDate&&d.ddl&&d.requestDate>d.ddl)issues.push('DDL不能早于下需时间');
     return issues;
   }
   function emptyDraft(type='visual-team',actor='管理员'){
-    if(!M.demandTypes.some(t=>t.value===type))throw new Error('请选择需求类型。');
+    if(!M.currentDemandTypes.some(t=>t.value===type))throw new Error('请选择需求类型。');
     const user=identity(actor);return {id:M.uid('VD'),demandType:type,submissionState:'draft',status:'',createdById:user.id,createdBy:user.name,draftOwnerId:user.id,draftOwnerName:user.name,source:{system:'PLATFORM'},logs:[],createdAt:M.now(),updatedAt:M.now(),revision:0};
   }
   function assertVersion(d,expected){if(expected!==undefined&&version(d)!==expected)throw new Error('数据冲突：该记录已在其他页面修改，请读取最新记录后重试。');}
@@ -95,7 +125,7 @@
     const next={...d},changes=[];
     if(Object.hasOwn(patch,'expression')){
       const expression=normalize('expression',patch.expression,config,d);next.expression=expression;
-      if(M.usesPostNumber(d.expression)!==M.usesPostNumber(expression)&&!Object.hasOwn(patch,'owner')&&d.owner){next.owner='';changes.push({field:'owner',label:'制作人',before:d.owner,after:''});}
+      if(M.usesDemandPostNumber(d,config.byType)!==M.usesDemandPostNumber(next,config.byType)&&!Object.hasOwn(patch,'owner')&&d.owner){next.owner='';changes.push({field:'owner',label:'制作人',before:d.owner,after:''});}
     }
     for(const [key,value] of Object.entries(patch)){
       const normalized=normalize(key,value,config,next);
@@ -105,14 +135,17 @@
         changes.push({field:key,label:'制作参考',before,after:M.clone(normalized)});continue;
       }
       if(normalized===String(d[key]??''))continue;
-      next[key]=normalized;changes.push({field:key,label:fields.find(f=>f.key===key).label,before:d[key]??'',after:normalized});
+      next[key]=normalized;changes.push({field:key,label:key==='owner'&&d.demandType===M.influencerDemandType?'帖子编号':fields.find(f=>f.key===key).label,before:d[key]??'',after:normalized});
     }
     if(!isDraft(d)){M.assertDemandMutable(d);if(!isDraft(next)){
       const prior=requiredIssues(d,config),errors=requiredIssues(next,config).filter(e=>!prior.includes(e));if(errors.length)throw new Error(errors.join('；'));
     }}
-    if(next.requestDate&&next.ddl&&next.requestDate>next.ddl)throw new Error('DDL不能早于下需时间。');
-    if(next.completionDate&&Object.hasOwn(patch,'requestDate')){const days=M.productionDays(next.requestDate,next.completionDate);if(days!==null&&days<0)throw new Error('下需时间不能晚于已记录的完成日期。');next.productionDays=days;}
-    if(d.demandType==='ad-team'){
+    if(allowed(next,'requestDate',config.byType)&&next.requestDate&&next.ddl&&next.requestDate>next.ddl)throw new Error('DDL不能早于下需时间。');
+    if(next.completionDate&&Object.hasOwn(patch,'requestDate')){
+      if(M.dateValue(next.requestDate)>M.dateValue(next.completionDate))throw new Error('下需时间不能晚于已记录的完成日期。');
+      next.productionDays=M.productionDays(next.requestDate,next.completionDate,config.byType);
+    }
+    if(M.isCompactDemandType(d.demandType)){
       next.businessChannel=d.businessChannel||'DTC';
     }
     if(!isDraft(d)&&['待分配','待制作'].includes(d.status)&&next.owner!==d.owner)next.status=M.initialProgressStatus(next.owner);
@@ -141,22 +174,27 @@
     Object.assign(d,{submissionState:'submitted',submittedAt:M.now(),submittedBy:identity(actor).name,status:M.initialProgressStatus(d.owner),revision:(d.revision||0)+1});
     M.appendLog(d,'提交需求','草稿 → '+d.status,identity(actor).name);return d;
   }
+  function deleteRecordIssue(store,d){
+    const materials=store?.materials||[],namings=store?.namings||[];
+    if(materials.some(m=>m.demandId===d.id&&!m.deletedAt))return '需求已有交付素材，不能删除，请先处理关联记录。';
+    if(namings.some(n=>!n.deletedAt&&(n.demandId===d.id||n.legacyDemandId===d.id||materials.some(m=>m.demandId===d.id&&m.id===n.materialId))))return '需求存在关联广告，请先处理关联记录。';
+    if(!isDraft(d)&&!M.canDeleteDemand(d))return '仅草稿、待分配、待制作、项目暂停的需求支持删除。';
+    return '';
+  }
   function deleteRecord(store,{id,expected},actor){
     const d=store.demands.find(d=>d.id===id&&!d.deletedAt);if(!d)throw new Error('需求不存在或已删除。');assertVersion(d,expected);assertDraftAccess(d,actor);
-    if(store.materials.some(m=>m.demandId===id&&!m.deletedAt))throw new Error('需求已有交付素材，不能删除，请先处理关联记录。');
-    if(store.namings.some(n=>!n.deletedAt&&(n.demandId===id||n.legacyDemandId===id||store.materials.some(m=>m.demandId===id&&m.id===n.materialId))))throw new Error('需求存在关联广告，请先处理关联记录。');
-    if(!isDraft(d)&&!M.canDeleteDemand(d))throw new Error('仅草稿、待分配、待制作、项目暂停的需求支持删除。');
+    const issue=deleteRecordIssue(store,d);if(issue)throw new Error(issue);
     Object.assign(d,{deletedAt:M.now(),deletedBy:identity(actor).name,revision:(d.revision||0)+1});M.appendLog(d,'删除需求','在线表格确认删除，保留历史记录',identity(actor).name);return d;
   }
-  function copyRecord(d,actor='管理员'){
+  function copyRecord(d,actor='管理员',byType=false){
     assertDraftAccess(d,actor);const next=emptyDraft(d.demandType,actor);
     const businessKeys=[...fields.map(f=>f.key),'referenceItems','completionDate','version','executionOwner','executionUrl','executionUrlMode','executionMaterialName','executionMethod','remark'];
     for(const key of businessKeys)if(Object.hasOwn(d,key))next[key]=M.clone(d[key]);
     next.requester=identity(actor).name;
-    const days=M.productionDays(next.requestDate,next.completionDate);next.productionDays=days!==null&&days>=0?days:null;
+    const days=M.productionDays(next.requestDate,next.completionDate,byType);next.productionDays=days!==null&&days>=0?days:null;
     return next;
   }
-  const api={identity,draftIdentity,canViewDemand,assertDraftAccess,normalizeDraftOwnership,batchEligibility,batchFields,sortDemands,fieldKeysForType,referenceValue,normalizeReference,referenceSummary,fields,commonFields,keyFields,isDraft,version,allowed,parseClipboard,normalize,requiredIssues,emptyDraft,assertVersion,changedValues,savePatch,submit,deleteRecord,copyRecord};
+  const api={compactFields,compactDemandColumns,identity,draftIdentity,canViewDemand,assertDraftAccess,normalizeDraftOwnership,batchEligibility,batchFields,sortDemands,fieldKeysForType,referenceValue,normalizeReference,referenceSummary,fields,commonFields,keyFields,isDraft,version,allowed,parseClipboard,normalize,requiredIssues,emptyDraft,assertVersion,changedValues,savePatch,submit,deleteRecord,copyRecord};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandGridModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 

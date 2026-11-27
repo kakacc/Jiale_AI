@@ -5,6 +5,27 @@
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const currentPrototypeVersion = '1.0.1';
+  const historicalPrototypeVersion = '1.0.0';
+  const managementRoutes = {'#/permission/department':'departments','#/permission/user':'users','#/permission/menu':'menus'};
+  const managementViews = Object.values(managementRoutes);
+  const requestedPrototypeVersion = new URLSearchParams(location.search).get('version');
+  const historicalPrototype = requestedPrototypeVersion === historicalPrototypeVersion
+    || (!requestedPrototypeVersion && Object.hasOwn(managementRoutes, location.hash));
+  const prototypeVersion = historicalPrototype ? historicalPrototypeVersion : currentPrototypeVersion;
+
+  function prototypeDemandStorageKey(legacyKey) {
+    if (historicalPrototype) return legacyKey;
+    const key = `${legacyKey}:${prototypeVersion}`;
+    try {
+      if (localStorage.getItem(key) === null) {
+        const previous = localStorage.getItem(legacyKey);
+        if (previous !== null) localStorage.setItem(key, previous);
+      }
+    } catch { /* The caller handles unavailable storage using the versioned key. */ }
+    return key;
+  }
+
   const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[char]));
   const today = () => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; };
   const nowText = () => new Date().toLocaleString('zh-CN', { hour12:false }).replaceAll('/', '-');
@@ -736,12 +757,23 @@
       expression:Object.fromEntries(demandOptionCatalog.expression.map(({id}) => [id,['DTC','AMZ','OTHER']]))
     }
   };
+  const expressionFieldsByDemandType = {
+    'visual-team':'visualTeamExpression',
+    'ad-team':'adTeamExpression',
+    'influencer-material':'influencerExpression'
+  };
+  const influencerExpressionOptions = optionPairs([['TTSUGC','TTS口播'],['IGUGC','IG原生口播']]);
+  const commonDemandOptionFields = ['businessChannel','productLevel','demandSource','channelCategory','materialType','mainSellingPoint','scene','secondarySellingPoint','bodyType','priority'];
+  const demandOptionTypeTabs = historicalPrototype ? [] : window.VisualDemandRecordsModel.currentDemandTypes;
   const demandOptionFieldLabels = {
-    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型', adPage:'投放主页', adMaterialSource:'素材来源', campaignType:'广告系列类型', sublevelType:'子层级类型'
+    businessChannel:'业务渠道', channelCategory:'渠道归类', productLevel:'产品级别', demandSource:'需求来源', materialType:'素材格式', expression:'表达方式', mainSellingPoint:'主卖点', secondarySellingPoint:'辅助卖点', scene:'场景', bodyType:'模特体型', priority:'优先级', materialCategory:'素材类型', adPage:'投放主页', adMaterialSource:'素材来源', campaignType:'广告系列类型', sublevelType:'子层级类型',
+    ...Object.fromEntries(demandOptionTypeTabs.map(({value}) => [expressionFieldsByDemandType[value],'表达方式']))
   };
   const demandOptionModules = [
-    {key:'shared', label:'公共', fields:['materialCategory']},
-    {key:'demand', label:'视觉需求', fields:['businessChannel','productLevel','demandSource','channelCategory','materialType','expression','mainSellingPoint','scene','secondarySellingPoint','bodyType','priority']},
+    {key:'shared', label:'公共', fields:historicalPrototype ? ['materialCategory'] : ['materialCategory',...commonDemandOptionFields]},
+    {key:'demand', label:'视觉需求', fields:historicalPrototype
+      ? [...commonDemandOptionFields.slice(0,5),'expression',...commonDemandOptionFields.slice(5)]
+      : Object.values(expressionFieldsByDemandType)},
     {key:'advertising', label:'广告命名', fields:['adPage','adMaterialSource','campaignType','sublevelType']}
   ];
   const demandOptionIdentityOverrides = {
@@ -787,16 +819,18 @@
     sublevelType:{'Asset-Group':'AG','素材组':'AG'}
   };
   const demandOptionSchemaVersion = '20261112-dimension-catalog-v37';
-  const demandOptionSchemaVersionKey = 'ai-material-visual-demand-options-schema-version';
-  const demandOptionHistoryKey = 'ai-material-visual-demand-option-history-v1';
-  const storedDemandOptionConfig = loadStoredObject('ai-material-visual-demand-options-v1', defaultDemandOptionConfig);
+  const demandOptionSchemaVersionKey = prototypeDemandStorageKey('ai-material-visual-demand-options-schema-version');
+  const demandOptionHistoryKey = prototypeDemandStorageKey('ai-material-visual-demand-option-history-v1');
+  const demandOptionConfigKey = prototypeDemandStorageKey('ai-material-visual-demand-options-v1');
+  const adDimensionSchemaKey = prototypeDemandStorageKey('ai-material-ad-dimensions-schema-v1');
+  const storedDemandOptionConfig = loadStoredObject(demandOptionConfigKey, defaultDemandOptionConfig);
   let demandOptionConfig = normalizeDemandOptionConfiguration({ ...JSON.parse(JSON.stringify(defaultDemandOptionConfig)), ...storedDemandOptionConfig, scopes:{...defaultDemandOptionConfig.scopes,...(storedDemandOptionConfig?.scopes || {})} });
   let demandOptionHistory = normalizeDemandOptionHistory(loadStoredObject(demandOptionHistoryKey, {}));
   if (localStorage.getItem(demandOptionSchemaVersionKey) !== demandOptionSchemaVersion) applyDemandOptionCatalog();
   else rememberDemandOptionConfig({}, demandOptionConfig);
-  if (localStorage.getItem('ai-material-ad-dimensions-schema-v1') !== '20261019-v11') {
+  if (localStorage.getItem(adDimensionSchemaKey) !== '20261019-v11') {
     persistDemandOptions();
-    localStorage.setItem('ai-material-ad-dimensions-schema-v1','20261019-v11');
+    localStorage.setItem(adDimensionSchemaKey,'20261019-v11');
   }
   let visualDemands = loadStored('ai-material-visual-demands-v1', [
     {id:'VR-202609-001',title:'260903周四-Modal 四大卖点',spu:'260903周四-Modal',businessChannel:'DTC',channelCategory:'Email',productLevel:'新品',demandSource:'月度视觉安排',materialType:'IMG',expression:'Campaign',mainSellingPoint:'四大卖点',scene:'网站页面',bodyType:'Average',requirements:'用于 EDM 四大卖点展示，保持品牌调性。',reference:'9月视觉安排总表',fbInfo:'',edmInfo:'四大卖点邮件视觉',requester:'沈玲燕',priority:'P0',requestDate:'2026-09-01',ddl:'2026-09-02',owner:'THD',materialCategory:'ProductBenefits',status:'已完成',linkedTaskIds:['TSK-DEMAND-001'],createdAt:'2026-09-01 09:10',updatedAt:'2026-09-02 18:20'},
@@ -2825,6 +2859,7 @@
   }
 
   function showView(name) {
+    if (!historicalPrototype && managementViews.includes(name)) return;
     const requestedTaskTab = name === 'usage' ? 'usage' : name === 'tasks' ? 'records' : null;
     const targetView = name === 'usage' ? 'tasks' : name;
     activeView = viewNames[targetView] ? targetView : 'workspace';
@@ -2841,8 +2876,12 @@
     const isManagementView = isDepartmentView || isUserView || isMenuView;
     const managementHash = isMenuView ? '#/permission/menu' : isUserView ? '#/permission/user' : '#/permission/department';
     document.title = `BI-Dashboard - ${isManagementView ? viewNames[activeView] : aiEditionLabel()}`;
-    if (isManagementView && location.hash !== managementHash) history.replaceState(null,'',`${location.pathname}${location.search}${managementHash}`);
-    else if (!isManagementView && ['#/permission/department','#/permission/user','#/permission/menu'].includes(location.hash)) history.replaceState(null,'',`${location.pathname}${location.search}`);
+    if (isManagementView || Object.hasOwn(managementRoutes, location.hash)) {
+      const url = new URL(location.href);
+      if (historicalPrototype && location.protocol !== 'file:') url.searchParams.set('version', historicalPrototypeVersion);
+      url.hash = isManagementView ? managementHash : '';
+      if (url.href !== location.href) history.replaceState(null, '', url.href);
+    }
     $('#breadcrumbModule').textContent = isManagementView ? '权限管理' : aiEditionLabel();
     $('#activeAiTab').textContent = isManagementView ? `♙ ${viewNames[activeView]}` : `✦ ${aiEditionLabel()}`;
     $('#openDepartmentManagement').classList.toggle('active', isDepartmentView);
@@ -3762,7 +3801,7 @@
     return entry?.label || '';
   }
   function persistDemandOptions() {
-    localStorage.setItem('ai-material-visual-demand-options-v1', JSON.stringify(demandOptionConfig));
+    localStorage.setItem(demandOptionConfigKey, JSON.stringify(demandOptionConfig));
     localStorage.setItem(demandOptionHistoryKey, JSON.stringify(demandOptionHistory));
     localStorage.setItem(demandOptionSchemaVersionKey, demandOptionSchemaVersion);
   }
@@ -3805,10 +3844,26 @@
     });
     return normalized;
   }
+  function influencerExpressionOption(value) {
+    const identifier = String(value ?? '').trim().replace(/[\s-]/g,'').toLowerCase();
+    return influencerExpressionOptions.find(option => option.id.toLowerCase() === identifier || option.label === value);
+  }
+  function demandOptionField(field, demandType) {
+    if (historicalPrototype || field !== 'expression' || !Object.hasOwn(expressionFieldsByDemandType, demandType)) return field;
+    return expressionFieldsByDemandType[demandType];
+  }
   function normalizeDemandOptionConfiguration(config = {}) {
     const normalized = {};
+    const scopes = {...config.scopes};
     Object.keys(demandOptionFieldLabels).forEach(field => {
-      const source = Array.isArray(config[field]) && config[field].length ? config[field] : (defaultDemandOptionConfig[field] || []);
+      let source = config[field];
+      if (!Array.isArray(source) || !source.length) {
+        if (field === expressionFieldsByDemandType['influencer-material']) source = influencerExpressionOptions;
+        else if (Object.values(expressionFieldsByDemandType).includes(field)) {
+          source = normalized.expression.filter(option => !influencerExpressionOption(option.id) && !influencerExpressionOption(option.label));
+          if (scopes.expression) scopes[field] = scopes.expression;
+        } else source = defaultDemandOptionConfig[field] || [];
+      }
       const seen = new Set();
       normalized[field] = source.map((option,index) => {
         const next = normalizeDemandOption(field, option, index);
@@ -3819,7 +3874,7 @@
         return { ...next, id:uniqueId };
       });
     });
-    normalized.scopes = normalizeDemandOptionScopes(config.scopes || {}, normalized);
+    normalized.scopes = normalizeDemandOptionScopes(scopes, normalized);
     return normalized;
   }
   function applyDemandOptionCatalog() {
@@ -3852,15 +3907,28 @@
   function currentDemandOption(field, value) {
     return demandOptionByValue(field,value) || demandOptionByValue(field,demandOptionHistoryByValue(field,value)?.targetId);
   }
-  function normalizeDemandOptionSelection(field, value) {
+  function legacyExpressionValue(optionField, value) {
+    const oldId = currentDemandOption('expression', value)?.id || value;
+    return optionField === expressionFieldsByDemandType['influencer-material']
+      ? influencerExpressionOption(oldId)?.id || oldId : oldId;
+  }
+  function normalizeDemandOptionSelection(field, value, demandType) {
     const raw = String(value ?? '').trim();
-    return currentDemandOption(field, raw)?.id || raw;
+    const optionField = demandOptionField(field, demandType);
+    return currentDemandOption(optionField, raw)?.id
+      || (optionField !== field && currentDemandOption(optionField, legacyExpressionValue(optionField, raw))?.id)
+      || raw;
   }
   function normalizeDemandOptionSelectionList(field, value) {
     return String(value || '').split(/[,，、]+/).map(item => normalizeDemandOptionSelection(field, item)).filter(Boolean).join('、');
   }
-  function demandOptionDisplayValue(field, value) {
-    return demandOptionByValue(field, value)?.label || demandOptionHistoryDisplayValue(field, value) || String(value ?? '');
+  function demandOptionDisplayValue(field, value, demandType) {
+    const optionField = demandOptionField(field, demandType);
+    const selected = normalizeDemandOptionSelection(field, value, demandType);
+    return demandOptionByValue(optionField, selected)?.label || demandOptionHistoryDisplayValue(optionField, selected)
+      || (optionField !== field && demandOptionHistoryDisplayValue(optionField, legacyExpressionValue(optionField, value)))
+      || (optionField !== field && influencerExpressionOption(value)?.label)
+      || demandOptionByValue(field, value)?.label || demandOptionHistoryDisplayValue(field, value) || String(value ?? '');
   }
   function demandOptionDisplayList(field, value) {
     return String(value || '').split(/[,，、]+/).map(item => demandOptionDisplayValue(field, item)).filter(Boolean).join('、');
@@ -3868,12 +3936,13 @@
   function normalizeVisualDemandOptionValues(item) {
     const next = { ...item };
     Object.keys(demandOptionFieldLabels).forEach(field => {
-      if (Object.prototype.hasOwnProperty.call(next, field)) next[field] = normalizeDemandOptionSelection(field, next[field]);
+      if (Object.prototype.hasOwnProperty.call(next, field)) next[field] = normalizeDemandOptionSelection(field, next[field], next.demandType);
     });
     return next;
   }
-  function demandOptionsFor(field, businessChannel = '') {
-    const values = Array.isArray(demandOptionConfig[field]) ? demandOptionConfig[field] : [];
+  function demandOptionsFor(field, businessChannel = '', demandType) {
+    field = demandOptionField(field, demandType);
+    const values = demandOptionConfig[field] || [];
     if (!businessChannel || !demandOptionConfig.scopes?.[field]) return values;
     const businessChannelId = normalizeDemandOptionSelection('businessChannel', businessChannel);
     const scopedChannels = new Set(Object.values(demandOptionConfig.scopes[field]).flatMap(scope => Array.isArray(scope) ? scope : []));
@@ -3883,9 +3952,9 @@
       return !Array.isArray(scope) || !scope.length || scope.includes(businessChannelId);
     });
   }
-  function demandOptionMarkup(field, selected = '', businessChannel = '', includeAll = false) {
-    const available = demandOptionsFor(field, businessChannel);
-    const selectedId = normalizeDemandOptionSelection(field, selected);
+  function demandOptionMarkup(field, selected = '', businessChannel = '', includeAll = false, demandType) {
+    const available = demandOptionsFor(field, businessChannel, demandType);
+    const selectedId = normalizeDemandOptionSelection(field, selected, demandType);
     return `${includeAll ? '<option value="">全部</option>' : '<option value="">请选择</option>'}${available.map(option => `<option value="${escapeHtml(option.id)}"${option.id === selectedId ? ' selected' : ''}>${escapeHtml(option.label)}</option>`).join('')}`;
   }
   function demandFieldHelpMarkup(copy) {
@@ -3993,7 +4062,7 @@
         <label class="field"><span class="field-label">素材格式 <em class="required-mark">*</em></span><select name="materialType" id="demandMaterialType" required>${demandOptionMarkup('materialType', item.materialType || '', business)}</select></label>
       </div></div>
       <div class="demand-form-section"><div class="demand-form-section-title"><b>内容与制作要求</b><span>描述素材表达与交付要求</span></div><div class="demand-form-grid">
-        <label class="field"><span class="field-label">表达方式 <em class="required-mark">*</em></span><select name="expression" id="demandExpression" required>${demandOptionMarkup('expression', item.expression || '', business)}</select></label>
+        <label class="field"><span class="field-label">表达方式 <em class="required-mark">*</em></span><select name="expression" id="demandExpression" required>${demandOptionMarkup('expression', item.expression || '', business, false, item.demandType)}</select></label>
         <label class="field"><span class="field-label">主卖点 <em class="required-mark">*</em></span><select name="mainSellingPoint" required>${demandOptionMarkup('mainSellingPoint', item.mainSellingPoint || '')}</select></label>
         <label class="field"><span class="field-label">场景 <em class="required-mark">*</em></span><select name="scene" required>${demandOptionMarkup('scene', item.scene || '')}</select></label>
         <label class="field"><span class="field-label">辅助卖点</span><select name="secondarySellingPoint">${demandOptionMarkup('secondarySellingPoint', item.secondarySellingPoint || '')}</select></label>
@@ -4013,7 +4082,8 @@
   }
   function readDemandForm(existing = null, settings = {}) {
     const form = $('#visualDemandForm');
-    const preservesDeletedOption = control => existing && control.matches('select[name]') && control.dataset.originalValue && control.dataset.userChanged !== 'true' && !demandOptionByValue(control.name, control.dataset.originalValue);
+    const preservesDeletedOption = control => existing && control.matches('select[name]') && control.dataset.originalValue && control.dataset.userChanged !== 'true'
+      && !demandOptionsFor(control.name, '', existing.demandType).some(option => option.id === normalizeDemandOptionSelection(control.name, control.dataset.originalValue, existing.demandType));
     const missingRequired = [...form.querySelectorAll('[required]')].find(control => !String(control.value || '').trim() && !preservesDeletedOption(control));
     if (missingRequired) {
       const fieldLabel = missingRequired.closest('.field')?.querySelector('.field-label')?.textContent.replace('*','').trim() || '必填项';
@@ -4032,7 +4102,7 @@
     if (existing) {
       $$('select[name]', form).forEach(select => {
         const originalValue = select.dataset.originalValue || '';
-        if (!values[select.name] && originalValue && select.dataset.userChanged !== 'true' && !demandOptionByValue(select.name, originalValue)) values[select.name] = originalValue;
+        if (!values[select.name] && preservesDeletedOption(select)) values[select.name] = originalValue;
       });
     }
     if (settings.requireRequester!==false && !values.requester) { toast('请选择需求对接人', 'warning'); $('[data-demand-user-picker="requester"] > summary', form)?.focus(); return null; }
@@ -4134,7 +4204,7 @@
       const business = event.target.value;
       [['demandChannelCategory','channelCategory'],['demandMaterialType','materialType'],['demandExpression','expression']].forEach(([id,field]) => {
         const select = $(`#${id}`, form); const current = select.value;
-        select.innerHTML = demandOptionMarkup(field, current, business);
+        select.innerHTML = demandOptionMarkup(field, current, business, false, existing?.demandType || form.elements.demandType?.value);
         if (![...select.options].some(option => option.value === current)) select.value = '';
         select._refreshDemandSearchSelect?.();
       });
@@ -4219,14 +4289,20 @@
   }
   function openDemandOptionManager() {
     const workingConfig = JSON.parse(JSON.stringify(demandOptionConfig));
-    Object.keys(demandOptionFieldLabels).forEach(field => {
-      (workingConfig[field] || []).forEach(option => { option._originId = option.id; });
+    const editableFields = demandOptionModules.flatMap(module => module.fields);
+    editableFields.forEach(field => {
+      workingConfig[field].forEach(option => { option._originId = option.id; });
     });
     let activeModule = demandOptionModules[0];
+    let activeDemandType = demandOptionTypeTabs[0]?.value;
     const selectedDimensions = Object.fromEntries(demandOptionModules.map(module => [module.key,module.fields[0]]));
     let activeField = selectedDimensions[activeModule.key];
+    const visibleFields = () => activeModule.key === 'demand' && activeDemandType
+      ? [expressionFieldsByDemandType[activeDemandType]] : activeModule.fields;
     const selectDimension = field => {
       activeModule = demandOptionModules.find(module => module.fields.includes(field));
+      const type = demandOptionTypeTabs.find(({value}) => expressionFieldsByDemandType[value] === field);
+      if (type) activeDemandType = type.value;
       activeField = field;
       selectedDimensions[activeModule.key] = field;
     };
@@ -4251,21 +4327,22 @@
       return '';
     };
     const validateWorkingConfig = () => {
-      for (const field of Object.keys(demandOptionFieldLabels)) {
+      for (const field of editableFields) {
         const message = validateField(field);
         if (message) return { field, message };
       }
       return null;
     };
     const tabs = demandOptionModules.map(module => `<button id="demandOptionTab-${module.key}" type="button" role="tab" data-demand-option-module="${module.key}" aria-controls="demandOptionModulePanel">${module.label}</button>`).join('');
-    openDialog('配置维度选项值','删除选项后保留已有记录的显示，修改会同步到相关模块。',`<div class="demand-option-manager dialog-wide-content"><div class="demand-option-tabs" role="tablist" aria-label="维度所属模块">${tabs}</div><div id="demandOptionModulePanel" class="demand-option-layout" role="tabpanel"><aside class="demand-option-dimensions"><div><span>维度</span><b>选择需配置的维度</b></div><div id="demandOptionDimensions"></div><p id="demandOptionScopeNote">新增选项默认对全部业务渠道可用。</p></aside><section class="demand-option-values-panel"><div class="demand-option-values-head"><div><span>维度选项值</span><b id="demandOptionActiveLabel"></b></div></div><div id="demandOptionItems"></div><div class="demand-option-add"><input id="newDemandOptionIdentifier" maxlength="64" pattern="[A-Za-z0-9-]+" title="仅支持英文字母、数字和连字符" placeholder="英文标识，如 Campaign"><input id="newDemandOptionLabel" maxlength="40" placeholder="中文显示，如 Campaign系列"><button class="button secondary" type="button" id="addDemandOption">新增选项值</button></div></section></div></div>`,'保存配置',() => {
+    const typeTabs = demandOptionTypeTabs.map(({value,label}) => `<button id="demandOptionType-${value}" type="button" role="tab" data-demand-option-type="${value}" aria-controls="demandOptionTypePanel">${label}</button>`).join('');
+    openDialog('配置维度选项值','删除选项后保留已有记录的显示，修改会同步到相关模块。',`<div class="demand-option-manager dialog-wide-content"><div class="demand-option-tabs" role="tablist" aria-label="维度所属模块">${tabs}</div><div id="demandOptionModulePanel" role="tabpanel">${typeTabs ? `<div id="demandOptionTypeTabs" class="demand-option-type-tabs" role="tablist" aria-label="需求类型" hidden>${typeTabs}</div>` : ''}<div id="demandOptionTypePanel" class="demand-option-layout"><aside class="demand-option-dimensions"><div><span>维度</span><b>选择需配置的维度</b></div><div id="demandOptionDimensions"></div><p id="demandOptionScopeNote">新增选项默认对全部业务渠道可用。</p></aside><section class="demand-option-values-panel"><div class="demand-option-values-head"><div><span>维度选项值</span><b id="demandOptionActiveLabel"></b></div></div><div id="demandOptionItems"></div><div class="demand-option-add"><input id="newDemandOptionIdentifier" maxlength="64" pattern="[A-Za-z0-9-]+" title="仅支持英文字母、数字和连字符" placeholder="英文标识，如 Campaign"><input id="newDemandOptionLabel" maxlength="40" placeholder="中文显示，如 Campaign系列"><button class="button secondary" type="button" id="addDemandOption">新增选项值</button></div></section></div></div></div>`,'保存配置',() => {
       $$('[data-demand-option-identifier-index]', manager).forEach(input => { const option = workingConfig[activeField]?.[Number(input.dataset.demandOptionIdentifierIndex)]; if (option) option.id = input.value.trim(); });
       $$('[data-demand-option-label-index]', manager).forEach(input => { const option = workingConfig[activeField]?.[Number(input.dataset.demandOptionLabelIndex)]; if (option) option.label = input.value.trim(); });
       const invalid = validateWorkingConfig();
       if (invalid) { selectDimension(invalid.field); renderAll(); toast(invalid.message, 'warning'); return; }
       const nextConfig = normalizeDemandOptionConfiguration(workingConfig);
       const renames = {};
-      Object.keys(demandOptionFieldLabels).forEach(field => {
+      editableFields.forEach(field => {
         renames[field] = {};
         (workingConfig[field] || []).forEach(option => {
           if (option._originId && option._originId.toLowerCase() !== option.id.toLowerCase()) renames[field][option._originId] = option.id;
@@ -4277,16 +4354,33 @@
     });
     const body = $('#dialogBody');
     const manager = $('.demand-option-manager', body);
-    const tabButtons = $$('[data-demand-option-module]', manager);
+    const moduleButtons = $$('[data-demand-option-module]', manager);
+    const typeButtons = $$('[data-demand-option-type]', manager);
+    const updateTabs = (buttons, selectedId) => buttons.forEach(button => {
+      const selected = button.id === selectedId;
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+    });
     const renderDimensions = () => {
-      tabButtons.forEach(button => {
-        const selected = button.dataset.demandOptionModule === activeModule.key;
-        button.setAttribute('aria-selected', String(selected));
-        button.tabIndex = selected ? 0 : -1;
-      });
-      $('#demandOptionModulePanel').setAttribute('aria-labelledby', `demandOptionTab-${activeModule.key}`);
+      const moduleTabId = `demandOptionTab-${activeModule.key}`;
+      updateTabs(moduleButtons, moduleTabId);
+      $('#demandOptionModulePanel').setAttribute('aria-labelledby', moduleTabId);
+      if (typeButtons.length) {
+        const showTypes = activeModule.key === 'demand';
+        const typeTabId = `demandOptionType-${activeDemandType}`;
+        $('#demandOptionTypeTabs').hidden = !showTypes;
+        updateTabs(typeButtons, typeTabId);
+        const panel = $('#demandOptionTypePanel');
+        if (showTypes) {
+          panel.setAttribute('role','tabpanel');
+          panel.setAttribute('aria-labelledby',typeTabId);
+        } else {
+          panel.removeAttribute('role');
+          panel.removeAttribute('aria-labelledby');
+        }
+      }
       $('#demandOptionScopeNote').hidden = activeModule.key === 'advertising';
-      $('#demandOptionDimensions').innerHTML = activeModule.fields.map(field => `<button type="button" class="demand-option-dimension${field === activeField ? ' active' : ''}" data-demand-option-field="${escapeHtml(field)}"><span>${escapeHtml(demandOptionFieldLabels[field])}</span><small>${(workingConfig[field] || []).length} 项</small></button>`).join('');
+      $('#demandOptionDimensions').innerHTML = visibleFields().map(field => `<button type="button" class="demand-option-dimension${field === activeField ? ' active' : ''}" data-demand-option-field="${escapeHtml(field)}"><span>${escapeHtml(demandOptionFieldLabels[field])}</span><small>${(workingConfig[field] || []).length} 项</small></button>`).join('');
     };
     const renderItems = () => {
       const values = workingConfig[activeField] || [];
@@ -4324,6 +4418,7 @@
     });
     manager.addEventListener('change', handleOptionEdit);
     manager.addEventListener('keydown', event => {
+      const tabButtons = event.target.matches('[data-demand-option-type]') ? typeButtons : moduleButtons;
       const index = tabButtons.indexOf(event.target);
       if (index < 0) return;
       const next = {ArrowLeft:(index + tabButtons.length - 1) % tabButtons.length,ArrowRight:(index + 1) % tabButtons.length,Home:0,End:tabButtons.length - 1}[event.key];
@@ -4333,6 +4428,8 @@
     manager.addEventListener('click', event => {
       const moduleButton = event.target.closest('[data-demand-option-module]');
       if (moduleButton) { selectDimension(selectedDimensions[moduleButton.dataset.demandOptionModule]); renderAll(); return; }
+      const typeButton = event.target.closest('[data-demand-option-type]');
+      if (typeButton) { selectDimension(expressionFieldsByDemandType[typeButton.dataset.demandOptionType]); renderAll(); return; }
       const dimensionButton = event.target.closest('[data-demand-option-field]');
       if (dimensionButton) { selectDimension(dimensionButton.dataset.demandOptionField); renderAll(); return; }
       if (event.target.closest('#addDemandOption')) {
@@ -4788,7 +4885,7 @@
       return group.map(([value,label]) => value ? escapeHtml(value) : `<span class="naming-preview-missing">[缺失${escapeHtml(label)}]</span>`).join(separator);
     }).join('_');
   }
-  function assetNamingState(row, {producerLabel = '制作人', dateLabel = '入库时间', requireProductionInfo = false} = {}) {
+  function assetNamingState(row, {producerLabel = '制作人', dateLabel = '入库时间', requireProductionInfo = false, demandType} = {}) {
     const metadata = row?.[8] || {};
     const missing = [];
     const requiredToken = (value, label) => {
@@ -4796,7 +4893,7 @@
       if (!token) missing.push(label);
       return [token,label];
     };
-    const stableToken = (field, value, label) => requiredToken(normalizeDemandOptionSelection(field, value), label);
+    const stableToken = (field, value, label) => requiredToken(normalizeDemandOptionSelection(field, value, demandType), label);
     const sellingPoint = assetMetadataValues(metadata.mainSellingPoint).map(value => assetNamingToken(normalizeDemandOptionSelection('mainSellingPoint', value))).filter(Boolean).join('&');
     const producer = metadata.producerToken ?? assetProducerInitials(metadata.producer);
     const dateInput = metadata.completedAt || row?.[7] || '';
@@ -7515,7 +7612,7 @@
   }
   function demandRecordMaterialNaming(demand, execution = {}) {
     const completionDate = execution.completionDate ?? demand.completionDate ?? '';
-    const usesPostNumber = window.VisualDemandRecordsModel.usesPostNumber(demand.expression);
+    const usesPostNumber = window.VisualDemandRecordsModel.usesDemandPostNumber(demand,!historicalPrototype);
     const producer = execution.owner ?? demand.owner ?? '';
     const row = ['', '', execution.materialType || demand.materialType || '', '', '', '', '', completionDate, {
       spu:demand.spu, expression:demand.expression, mainSellingPoint:demand.mainSellingPoint,
@@ -7523,19 +7620,39 @@
       producer, producerToken:usesPostNumber ? assetNamingToken(producer) : undefined, completedAt:completionDate,
       version:execution.version ?? demand.version ?? 'V1'
     }];
-    return assetNamingState(row,{producerLabel:usesPostNumber?'帖子编号':'制作人',dateLabel:'完成日期',requireProductionInfo:true});
+    return assetNamingState(row,{producerLabel:usesPostNumber?'帖子编号':'制作人',dateLabel:'完成日期',requireProductionInfo:true,demandType:demand.demandType});
   }
-  visualDemandRecordsManager = window.createVisualDemandRecords({openDialog,closeDialog,toast,escapeHtml,currentUser:currentUserContext,users:platformUserDirectory,seedDemands:visualDemands,formMarkup:demandFormMarkup,readForm:readDemandForm,bindForm:bindDemandFormDependencies,optionLabel:demandOptionDisplayValue,materialNamingState:demandRecordMaterialNaming,namingPreviewMarkup,adOptions:field=>demandOptionsFor(field).map(option=>({value:option.id,label:option.label})),adOptionValue:advertisingOptionValue,optionCode:normalizeDemandOptionSelection,producerInitials:assetProducerInitials,openOptions:openDemandOptionManager});
+  visualDemandRecordsManager = window.createVisualDemandRecords({openDialog,closeDialog,toast,escapeHtml,currentUser:currentUserContext,users:platformUserDirectory,seedDemands:visualDemands,formMarkup:demandFormMarkup,readForm:readDemandForm,bindForm:bindDemandFormDependencies,optionLabel:demandOptionDisplayValue,materialNamingState:demandRecordMaterialNaming,namingPreviewMarkup,adOptions:(field,demandType)=>demandOptionsFor(field,'',demandType).map(option=>({value:option.id,label:option.label})),adOptionValue:advertisingOptionValue,optionCode:normalizeDemandOptionSelection,producerInitials:assetProducerInitials,openOptions:openDemandOptionManager,demandOnly:!historicalPrototype,storageKey:prototypeDemandStorageKey});
+  $('#permissionManagementNav').hidden = !historicalPrototype;
+  if (!historicalPrototype) {
+    $$('#editorPageSelect option,#specPageSelect option').forEach(option => {
+      if (managementViews.includes(option.value)) option.hidden = option.disabled = true;
+    });
+  }
+  const versionSelect = $('#prototypeVersion');
+  versionSelect.value = prototypeVersion;
+  versionSelect.addEventListener('change', () => {
+    const nextVersion = versionSelect.value;
+    if (nextVersion === prototypeVersion) return;
+    versionSelect.value = prototypeVersion;
+    commitSpecEditor();
+    if (prototypeMode === 'spec' && specDirty && !saveSpecs(true)) return;
+    const url = new URL(location.href);
+    if (nextVersion === currentPrototypeVersion) url.searchParams.delete('version');
+    else url.searchParams.set('version', nextVersion);
+    url.hash = '';
+    location.assign(url.href);
+  });
   observeBusinessTextLimits(); restoreDraft(); setAiEdition('main'); setCreationStage(1); renderWorkbench(); renderVisualDemands(); renderTasks(); renderAssets(); renderPrototypeLibrary(); renderTemplates(); renderTokenDetails(); updateNodeSummary(); updateVisualDemandSourceBanner(); $('#nameCount').textContent = $('#taskName').value.length.toLocaleString('zh-CN'); applyDesignState(); setPrototypeMode('experience'); observeDynamicDesignContent(); updateDesignSaveState(); updateSpecSaveState();
-  showView('demandRecords');
   const openManagementRoute = () => {
-    const route = {'#/permission/department':'departments','#/permission/user':'users','#/permission/menu':'menus'}[location.hash];
-    if (!route) return;
+    const route = managementRoutes[location.hash];
+    if (!historicalPrototype || !route) return false;
     if ($('#permissionManagementMenu').hidden) $('#togglePermissionManagement').click();
     showView(route);
+    return true;
   };
   window.addEventListener('hashchange',openManagementRoute);
-  openManagementRoute();
+  if (!openManagementRoute()) showView('demandRecords');
 })();
 
 })();

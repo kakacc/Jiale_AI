@@ -3,6 +3,9 @@
 (function (global) {
   'use strict';
   const demandTypes = [{value:'visual-team',label:'视觉组制作'},{value:'ad-team',label:'投放组制作'}];
+  const influencerDemandType = 'influencer-material';
+  const currentDemandTypes = [...demandTypes,{value:influencerDemandType,label:'红人素材制作'}];
+  const isCompactDemandType = type => type==='ad-team'||type===influencerDemandType;
   const visualProgressStatuses = ['制作中','已完成','项目暂停','待制作','待分配'];
   const executionStatuses = ['待制作','制作中','已完成','项目暂停'];
   const progressLabel = status => status==='项目暂停'?'暂停':status;
@@ -52,17 +55,22 @@
     return 'file://'+host+'/'+parts.map(part=>encodeURIComponent(part)).join('/');
   }
   function usesPostNumber(expression){return ['IGUGC','TTSUGC','IG原生口播','TTS口播'].includes(String(expression||'').trim().replace(/[\s_-]+/g,'').toUpperCase());}
-  function postNumberWarning(store,demand){const number=String(demand.owner||'').trim();return usesPostNumber(demand.expression)&&number&&(store.demands||[]).some(other=>!other.deletedAt&&other.id!==demand.id&&usesPostNumber(other.expression)&&String(other.owner||'').trim()===number)?'该帖子编号已存在，仍可继续填写和保存。':'';}
-  function validateProducer(demand,owner,validOwners=[],required=true){const value=String(owner||'').trim();if(usesPostNumber(demand.expression)){if(required&&!value)throw new Error('请输入帖子编号。');if(value.length>200)throw new Error('帖子编号最多200个字符。');}else if((required&&!value)||(value&&validOwners.length&&!validOwners.includes(value)))throw new Error('请选择平台内的制作人。');return value;}
-  function assignDemandProducer(store,id,owner,actor='管理员',validOwners=[]) {
+  function usesDemandPostNumber(demand, byType=false){
+    if(demand.demandType===influencerDemandType)return true;
+    return !(byType&&demand.demandType==='ad-team')&&usesPostNumber(demand.expression);
+  }
+  function postNumberWarning(store,demand,byType=false){const number=String(demand.owner||'').trim();return usesDemandPostNumber(demand,byType)&&number&&(store.demands||[]).some(other=>!other.deletedAt&&other.id!==demand.id&&usesDemandPostNumber(other,byType)&&String(other.owner||'').trim()===number)?'该帖子编号已存在，仍可继续填写和保存。':'';}
+  function validateProducer(demand,owner,validOwners=[],required=true,byType=false){const value=String(owner||'').trim();if(usesDemandPostNumber(demand,byType)){if(required&&!value)throw new Error('请输入帖子编号。');if(value.length>200)throw new Error('帖子编号最多200个字符。');}else if((required&&!value)||(value&&validOwners.length&&!validOwners.includes(value)))throw new Error('请选择平台内的制作人。');return value;}
+  function assignDemandProducer(store,id,owner,actor='管理员',validOwners=[],byType=false) {
     const d=store.demands.find(v=>v.id===id);if(!d)throw new Error('需求不存在。');
     assertDemandMutable(d);
     if(d.submissionState==='draft')throw new Error('请先提交需求，再分配制作人。');
     if(d.status!=='待分配')throw new Error('需求已不处于待分配状态，请刷新列表。');
     owner=String(owner||'').trim();
-    validateProducer(d,owner,validOwners);if(!usesPostNumber(d.expression)&&!validOwners.includes(owner))throw new Error('请选择平台内的制作人。');
+    validateProducer(d,owner,validOwners,true,byType);if(!usesDemandPostNumber(d,byType)&&!validOwners.includes(owner))throw new Error('请选择平台内的制作人。');
     d.owner=owner;d.status='待制作';
-    appendLog(d,'分配制作人','制作人：'+owner+'；待分配 → 待制作',actor);
+    const post=d.demandType===influencerDemandType;
+    appendLog(d,post?'填写帖子编号':'分配制作人',(post?'帖子编号：':'制作人：')+owner+'；待分配 → 待制作',actor);
     return d;
   }
   function generateMaterialAddress({completionDate,businessChannel='',channelCategory='',producer='',spu=''}) {
@@ -82,71 +90,126 @@
     const d=new Date(result+'T00:00:00Z');
     return !Number.isNaN(d.getTime())&&d.toISOString().slice(0,10)===result?result:null;
   }
-  const demandFilterDefaults = {demandId:'',title:'',spu:'',demandType:'',submissionState:'',status:'',priority:'',owner:'',requester:'',productLevel:'',channelCategory:'',demandSource:'',requestStart:'',requestEnd:'',ddlStart:'',ddlEnd:''};
-  function normalizeDemandFilters(input={}) {
-    return Object.fromEntries(Object.keys(demandFilterDefaults).map(key=>[key,typeof input?.[key]==='string'?input[key].trim().slice(0,200):'']));
+  const demandDateFilters = [['request','下需日期','requestDate'],['ddl','DDL','ddl'],['completion','完成日期','completionDate'],['created','创建时间','createdAt']];
+  const demandDimensionFilters = ['businessChannel','productLevel','demandSource','channelCategory','materialType','expression','mainSellingPoint','scene','materialCategory'];
+  const demandMultiFilters = ['status','priority','owner','requester','version','creator',...demandDimensionFilters];
+  const demandFilterDefaults = Object.fromEntries([
+    'demandId','title','spu','demandType','submissionState','status','priority','owner','postNumber','requester','version','creator',
+    ...demandDimensionFilters,...demandDateFilters.flatMap(([prefix])=>[prefix+'Start',prefix+'End'])
+  ].map(key=>[key,'']));
+  function demandCreator(demand) {
+    const creation=(demand.logs||[]).find(log=>['创建需求','创建草稿','创建演示记录','复制需求','导入需求'].includes(log.action));
+    return demand.createdBy||demand.draftOwnerName||creation?.actor||demand.createdById||'';
   }
-  function validateDemandFilters(input) {
-    const filters=normalizeDemandFilters(input);
-    for(const [prefix,label] of [['request','下需日期'],['ddl','DDL']]) {
+  function filterValues(value) {
+    const values=Array.isArray(value)?value:[value];
+    return [...new Set(values.filter(value=>typeof value==='string').map(value=>value.trim().slice(0,200)).filter(Boolean))].sort();
+  }
+  function normalizeFilterFields(input,defaults,multiFields=[]) {
+    return Object.fromEntries(Object.entries(defaults).map(([key,fallback])=>[key,multiFields.includes(key)?filterValues(input?.[key]):typeof input?.[key]==='string'?input[key].trim().slice(0,200):fallback]));
+  }
+  function matchesFilterValue(value,selection,normalize=value=>value) {
+    const selected=Array.isArray(selection)?selection:selection?[selection]:[];
+    return !selected.length||selected.some(candidate=>normalize(candidate)===normalize(value));
+  }
+  function normalizeDemandFilters(input={},multiple=false) {
+    return normalizeFilterFields(input,demandFilterDefaults,multiple?demandMultiFilters:[]);
+  }
+  function validateDemandFilters(input,multiple=false) {
+    const filters=normalizeDemandFilters(input,multiple);
+    for(const [prefix,label] of demandDateFilters) {
       const start=filters[prefix+'Start'],end=filters[prefix+'End'];
       if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error(label+'格式无效，请重新选择日期。');
       if(start&&end&&start>end)throw new Error(label+'开始日期不能晚于结束日期。');
     }
-    if(filters.demandType&&!demandTypes.some(t=>t.value===filters.demandType))throw new Error('需求类型筛选无效，请重新选择。');
-    if(filters.status&&!statuses.includes(filters.status))throw new Error('进度状态筛选无效，请重新选择。');
+    if(filters.demandType&&!currentDemandTypes.some(t=>t.value===filters.demandType))throw new Error('需求类型筛选无效，请重新选择。');
+    if(filterValues(filters.status).some(value=>!statuses.includes(value)))throw new Error('进度状态筛选无效，请重新选择。');
     if(filters.submissionState&&!['draft','submitted'].includes(filters.submissionState))throw new Error('提交状态筛选无效。');
-    if(filters.priority&&!['P0','P1','P2'].includes(filters.priority))throw new Error('优先级筛选无效，请重新选择。');
+    if(filterValues(filters.priority).some(value=>!['P0','P1','P2'].includes(value)))throw new Error('优先级筛选无效，请重新选择。');
     return filters;
   }
-  function demandMatchesFilters(demand,input,optionCode=(_field,value)=>value) {
-    const f=normalizeDemandFilters(input);
+  function demandMatchesFilters(demand,input,optionCode=(_field,value)=>value,multiple=false) {
+    const f=normalizeDemandFilters(input,multiple);
     if(demand.deletedAt)return false;
     if(f.submissionState&&(demand.submissionState==='draft'?'draft':'submitted')!==f.submissionState)return false;
-    if(f.status&&demand.submissionState==='draft')return false;
-    return [['demandId','id'],['title','title'],['spu','spu']].every(([key,field])=>!f[key]||String(demand[field]||'').toLowerCase().includes(f[key].toLowerCase()))&&
-      ['demandType','status','priority','owner','requester'].every(key=>!f[key]||demand[key]===f[key])&&
-      ['productLevel','channelCategory','demandSource'].every(key=>!f[key]||optionCode(key,demand[key])===optionCode(key,f[key]))&&
-      [['request','requestDate'],['ddl','ddl']].every(([prefix,field])=>{const date=dateValue(demand[field]);return (!f[prefix+'Start']||(date&&date>=f[prefix+'Start']))&&(!f[prefix+'End']||(date&&date<=f[prefix+'End']));});
+    if(filterValues(f.status).length&&demand.submissionState==='draft')return false;
+    return [['demandId','id'],['title','title'],['spu','spu'],['postNumber','owner']].every(([key,field])=>!f[key]||String(demand[field]||'').toLowerCase().includes(f[key].toLowerCase()))&&
+      ['demandType','status','priority','owner','requester','version'].every(key=>matchesFilterValue(demand[key],f[key]))&&
+      matchesFilterValue(demandCreator(demand),f.creator)&&
+      demandDimensionFilters.every(key=>matchesFilterValue(demand[key],f[key],value=>optionCode(key,value)))&&
+      demandDateFilters.every(([prefix,_label,field])=>{const date=dateValue(demand[field]);return (!f[prefix+'Start']||(date&&date>=f[prefix+'Start']))&&(!f[prefix+'End']||(date&&date<=f[prefix+'End']));});
   }
   function filterStorageKey(userId) {if(!userId||typeof userId!=='string')throw new Error('缺少登录人员标识，暂时无法保存筛选。');return 'ai-visual-demand-filters-v1:'+encodeURIComponent(userId);}
-  function encodeFilterPreference(userId,filters) {filterStorageKey(userId);return JSON.stringify({version:1,userId,filters:validateDemandFilters(filters)});}
-  function decodeFilterPreference(userId,value) {
+  function encodeFilterPreference(userId,filters,multiple=false,hiddenColumns) {
+    filterStorageKey(userId);
+    const preference={version:1,userId,filters:validateDemandFilters(filters,multiple)};
+    if(multiple&&Array.isArray(hiddenColumns))preference.hiddenColumns=filterValues(hiddenColumns).filter(key=>key!=='submissionState');
+    return JSON.stringify(preference);
+  }
+  function decodeFilterPreference(userId,value,multiple=false) {
     filterStorageKey(userId);const preference=JSON.parse(value);
     if(preference?.version!==1||preference.userId!==userId||!preference.filters||typeof preference.filters!=='object'||Array.isArray(preference.filters))throw new Error('已保存的筛选条件无法读取，请重新设置并保存。');
-    return validateDemandFilters(preference.filters);
+    return validateDemandFilters(preference.filters,multiple);
   }
   const materialFilterDefaults={materialId:'',name:'',sourceDemand:'',demandType:'',spu:'',producer:'',completionStart:'',completionEnd:''};
-  function normalizeMaterialFilters(input={}) {
-    return Object.fromEntries(Object.keys(materialFilterDefaults).map(key=>[key,typeof input?.[key]==='string'?input[key].trim().slice(0,200):'']));
+  const currentMaterialFilterDefaults={
+    materialId:'',name:'',sourceDemandId:'',sourceDemandName:'',demandType:'',spu:'',requester:'',producer:'',version:'',
+    startedStart:'',startedEnd:'',createdStart:'',createdEnd:'',creator:''
+  };
+  const materialMultiFilters=['demandType','spu','requester','producer','version','creator'];
+  const materialVersion=(material,demand)=>material.version||demand?.version||'V1';
+  function materialCreator(material,demand){
+    if(material.createdBy||material.createdById)return material.createdBy||material.createdById;
+    if(material.source?.system==='DEMO')return '管理员';
+    const creation=(demand?.logs||[]).filter(log=>['执行需求','重新执行需求','导入交付素材'].includes(log.action)&&String(log.detail||'').endsWith(material.id)).at(-1);
+    return creation?.actor||'';
   }
-  function validateMaterialFilters(input) {
-    const f=normalizeMaterialFilters(input),start=f.completionStart,end=f.completionEnd;
-    if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error('完成日期格式无效，请重新选择日期。');
-    if(start&&end&&start>end)throw new Error('完成日期开始日期不能晚于结束日期。');
-    if(f.demandType&&!demandTypes.some(type=>type.value===f.demandType))throw new Error('需求类型筛选无效，请重新选择。');
+  function normalizeMaterialFilters(input={},byType=false) {
+    if(!byType)return normalizeFilterFields(input,materialFilterDefaults);
+    const normalized=normalizeFilterFields(input,currentMaterialFilterDefaults,materialMultiFilters);
+    // Migrate the former combined source-demand query into its corresponding field.
+    if(input?.sourceDemand&&!normalized.sourceDemandId&&!normalized.sourceDemandName){
+      const query=String(input.sourceDemand).trim().slice(0,200);
+      normalized[/^VD(?:-|$)/i.test(query)?'sourceDemandId':'sourceDemandName']=query;
+    }
+    return normalized;
+  }
+  function validateMaterialFilters(input,byType=false) {
+    const f=normalizeMaterialFilters(input,byType);
+    for(const [prefix,label] of byType?[['started','开始日期'],['created','创建时间']]:[['completion','完成日期']]){
+      const start=f[prefix+'Start'],end=f[prefix+'End'];
+      if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error(label+'格式无效，请重新选择日期。');
+      if(start&&end&&start>end)throw new Error(label+'范围的开始日期不能晚于结束日期。');
+    }
+    if(filterValues(f.demandType).some(value=>!(byType?currentDemandTypes:demandTypes).some(type=>type.value===value)))throw new Error('需求类型筛选无效，请重新选择。');
     return f;
   }
-  function materialMatchesFilters(material,demand,input,generatedName='') {
-    const f=normalizeMaterialFilters(input),includes=(value,query)=>!query||String(value||'').toLowerCase().includes(query.toLowerCase());
-    const date=dateValue(material.deliveredAt||demand.completionDate);
-    return includes(material.id,f.materialId)&&includes(generatedName||material.name,f.name)&&
-      (!f.sourceDemand||[demand.id,demand.title].some(value=>includes(value,f.sourceDemand)))&&
-      includes(demand.spu,f.spu)&&(!f.demandType||demand.demandType===f.demandType)&&
-      (!f.producer||(material.deliveredBy||demand.executionOwner||demand.owner)===f.producer)&&
-      (!f.completionStart||(Boolean(date)&&date>=f.completionStart))&&(!f.completionEnd||(Boolean(date)&&date<=f.completionEnd));
+  function materialMatchesFilters(material,demand,input,generatedName='',byType=false) {
+    const f=normalizeMaterialFilters(input,byType),includes=(value,query)=>!query||String(value||'').toLowerCase().includes(query.toLowerCase());
+    const inRange=(prefix,value)=>{
+      const date=dateValue(value),start=f[prefix+'Start'],end=f[prefix+'End'];
+      return (!start||(Boolean(date)&&date>=start))&&(!end||(Boolean(date)&&date<=end));
+    };
+    const common=includes(material.id,f.materialId)&&includes(generatedName||material.name,f.name)&&(byType?matchesFilterValue(demand.spu,f.spu):includes(demand.spu,f.spu))&&
+      matchesFilterValue(demand.demandType,f.demandType)&&matchesFilterValue(material.deliveredBy||demand.executionOwner||demand.owner,f.producer);
+    if(!common)return false;
+    if(!byType)return (!f.sourceDemand||[demand.id,demand.title].some(value=>includes(value,f.sourceDemand)))&&inRange('completion',material.deliveredAt||demand.completionDate);
+    return includes(demand.id,f.sourceDemandId)&&includes(demand.title,f.sourceDemandName)&&
+      matchesFilterValue(demand.requester,f.requester)&&matchesFilterValue(materialVersion(material,demand),f.version)&&
+      matchesFilterValue(materialCreator(material,demand),f.creator)&&
+      inRange('started',material.startedAt||demand.startedAt)&&inRange('created',material.createdAt);
   }
   function materialFilterStorageKey(userId) {filterStorageKey(userId);return 'ai-visual-material-filters-v1:'+encodeURIComponent(userId);}
-  function encodeMaterialFilterPreference(userId,filters) {materialFilterStorageKey(userId);return JSON.stringify({version:1,kind:'materials',userId,filters:validateMaterialFilters(filters)});}
-  function decodeMaterialFilterPreference(userId,value) {
+  function encodeMaterialFilterPreference(userId,filters,byType=false) {materialFilterStorageKey(userId);return JSON.stringify({version:1,kind:'materials',userId,filters:validateMaterialFilters(filters,byType)});}
+  function decodeMaterialFilterPreference(userId,value,byType=false) {
     materialFilterStorageKey(userId);const preference=JSON.parse(value);
     if(preference?.version!==1||preference.kind!=='materials'||preference.userId!==userId||!preference.filters||typeof preference.filters!=='object'||Array.isArray(preference.filters))throw new Error('已保存的素材筛选条件无法读取，请重新设置并保存。');
-    return validateMaterialFilters(preference.filters);
+    return validateMaterialFilters(preference.filters,byType);
   }
   function updateMaterialUrl(store,materialId,url,actor='管理员') {
     const material=store.materials.find(m=>m.id===materialId&&!m.deletedAt);if(!material)throw new Error('素材记录不存在或已删除。');
     const demand=store.demands.find(d=>d.id===material.demandId);if(!demand||demand.deletedAt)throw new Error('来源需求不存在或已删除，无法同步素材URL。');
-    url=String(url||'').trim();if(!url&&d.demandType!=='ad-team')throw new Error('请填写素材URL。');
+    url=String(url||'').trim();if(!url&&!isCompactDemandType(d.demandType))throw new Error('请填写素材URL。');
     if(url&&!isMaterialAddress(url))throw new Error('请填写有效的 HTTP/HTTPS 链接或局域网共享路径。');
     const at=now();
     material.url=url;material.updatedAt=at;
@@ -170,8 +233,11 @@
   const sharedRequiredFields = new Set(['title','spu','channelCategory','materialType','expression','mainSellingPoint','scene','materialCategory']);
   const visualOnlyRequiredFields = new Set(['businessChannel','productLevel','demandSource','requestDate','ddl','requester','priority']);
   function isDemandFieldRequired(demand, field) {
-    if(field==='owner')return demand.submissionState!=='draft'&&canonicalProgressStatus(demand.status,demand.owner)!=='待分配';
-    return sharedRequiredFields.has(field)||(demand.demandType!=='ad-team'&&visualOnlyRequiredFields.has(field));
+    if(field==='owner'){
+      if(demand.submissionState==='draft')return demand.demandType===influencerDemandType;
+      return canonicalProgressStatus(demand.status,demand.owner)!=='待分配';
+    }
+    return sharedRequiredFields.has(field)||(!isCompactDemandType(demand.demandType)&&visualOnlyRequiredFields.has(field));
   }
   function normalizeProgressStore(store) {
     let changed=false;
@@ -193,6 +259,8 @@
   }
   const canModifyDemand = demand => Boolean(demand)&&!demand.deletedAt&&!['已完成','项目暂停'].includes(canonicalProgressStatus(demand.status,demand.owner));
   const canExecuteDemand = demand => Boolean(demand)&&!demand.deletedAt&&demand.submissionState!=='draft'&&['待制作','制作中','项目暂停'].includes(canonicalProgressStatus(demand.status,demand.owner));
+  const canReexecuteDemand = (store,demand) => Boolean(demand)&&!demand.deletedAt&&demand.submissionState!=='draft'&&
+    canonicalProgressStatus(demand.status,demand.owner)==='已完成'&&!store.materials.some(material=>material.demandId===demand.id&&!material.deletedAt);
   function assertDemandMutable(demand) {if(demand?.deletedAt)throw new Error('需求已删除，不能修改。');if(!canModifyDemand(demand))throw new Error('已完成或项目暂停的需求不允许修改。');}
   const adTeamDemandFormSections=[
     {title:'基础信息',fields:['title','spu','channelCategory','materialType','requestDate','ddl']},
@@ -209,39 +277,51 @@
   }
   function prepareDemandRecord(existing,values) {
     if(existing){assertDemandMutable(existing);if(String(values.demandType||'')!==String(existing.demandType||''))throw new Error('编辑需求不支持修改需求类型。');}
-    else if(!demandTypes.some(type=>type.value===values.demandType))throw new Error('请选择需求类型。');
+    else if(!currentDemandTypes.some(type=>type.value===values.demandType))throw new Error('请选择需求类型。');
     const owner=String(values.owner||'').trim();
     if(existing&&isDemandFieldRequired(existing,'owner')&&!owner)throw new Error('制作人不能为空。');
     const current=existing?canonicalProgressStatus(existing.status,existing.owner):'';
     const status=!existing||!owner||['待制作','待分配'].includes(current)?initialProgressStatus(owner):current;
     return {...existing,...values,owner,status,demandType:existing?existing.demandType||'':values.demandType};
   }
-  function productionDays(requestDate,completionDate) {
+  function productionDays(requestDate,completionDate,workdays=false) {
     const start=dateValue(requestDate),end=dateValue(completionDate);
     if(!start||!end)return null;
-    return Math.round((Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000);
+    const startDay=new Date(start+'T00:00:00Z');
+    const gap=Math.round((Date.parse(end+'T00:00:00Z')-startDay.getTime())/86400000);
+    if(!workdays)return gap;
+    if(gap<0)return 1;
+    const inclusiveDays=gap+1;
+    let weekdays=Math.floor(inclusiveDays/7)*5;
+    for(let offset=0;offset<inclusiveDays%7;offset++){
+      const weekday=(startDay.getUTCDay()+offset)%7;
+      if(weekday>=1&&weekday<=5)weekdays++;
+    }
+    return Math.max(1,weekdays-1);
   }
-  function visualExecutionDefaults(demand,actor,today=now().slice(0,10)) {
+  function visualExecutionDefaults(demand,actor,today=now().slice(0,10),byType=false) {
     const saved=Boolean(demand.executionUpdatedAt);
-    return {status:visualProgressStatuses.includes(demand.status)?demand.status:(['已交付','已关闭'].includes(demand.status)?'已完成':'制作中'),owner:usesPostNumber(demand.expression)?demand.owner||'':saved?demand.owner||actor:actor,completionDate:saved?demand.completionDate||today:today,version:saved?demand.version||'V1':'V1'};
+    return {status:visualProgressStatuses.includes(demand.status)?demand.status:(['已交付','已关闭'].includes(demand.status)?'已完成':'制作中'),owner:usesDemandPostNumber(demand,byType)?demand.owner||'':saved?demand.owner||actor:actor,completionDate:saved?demand.completionDate||today:today,version:saved?demand.version||'V1':'V1'};
   }
-  function saveDemandExecution(store,demandId,input,actor='管理员',validOwners=[],namingProvider=null) {
+  function saveDemandExecution(store,demandId,input,actor='管理员',validOwners=[],namingProvider=null,byType=false) {
     const d=store.demands.find(v=>v.id===demandId);if(!d)throw new Error('需求不存在。');
-    if(!canExecuteDemand(d))assertDemandMutable(d);
+    const reexecuting=byType&&canReexecuteDemand(store,d);
+    if(!canExecuteDemand(d)&&!reexecuting)assertDemandMutable(d);
     if(d.submissionState==='draft')throw new Error('请先提交需求，再执行制作。');
     if(d.status==='待分配')throw new Error('请先分配制作人，再执行需求。');
-    if(!demandTypes.some(type=>type.value===d.demandType))throw new Error('请先补充需求类型。');
+    if(!currentDemandTypes.some(type=>type.value===d.demandType))throw new Error('请先补充需求类型。');
     const preserveOwner=!Object.hasOwn(input,'owner');
     const owner=preserveOwner?String(d.owner??''):String(input.owner||'').trim();
     const status=String(input.status||''),version=String(input.version||'').trim(),completionDate=String(input.completionDate||''),url=String(input.url||'').trim();
     if(!(preserveOwner?executionStatuses:visualProgressStatuses).includes(status))throw new Error('请选择有效的进度状态。');
-    if(!preserveOwner)validateProducer(d,owner,validOwners,isDemandFieldRequired({...d,status},'owner'));
+    if(!preserveOwner)validateProducer(d,owner,validOwners,isDemandFieldRequired({...d,status},'owner'),byType);
     if(!version||version.length>200)throw new Error('请填写版本，最多200个字符。');
     if(!/^\d{4}-\d{2}-\d{2}$/.test(completionDate)||dateValue(completionDate)!==completionDate)throw new Error('请选择有效的完成日期。');
-    const days=productionDays(d.requestDate,completionDate);
-    if(days===null&&(isDemandFieldRequired(d,'requestDate')||String(d.requestDate??'').trim()))throw new Error('请先在需求基础信息中补充有效的下需日期。');
-    if(days<0)throw new Error('完成日期不能早于下需日期。');
-    if(!url&&d.demandType!=='ad-team')throw new Error('请填写素材URL。');
+    const hidesRequestDate=byType&&isCompactDemandType(d.demandType);
+    const days=productionDays(d.requestDate,completionDate,byType);
+    if(!hidesRequestDate&&days===null&&(isDemandFieldRequired(d,'requestDate')||String(d.requestDate??'').trim()))throw new Error('请先在需求基础信息中补充有效的下需日期。');
+    if(!hidesRequestDate&&dateValue(d.requestDate)>completionDate)throw new Error('完成日期不能早于下需日期。');
+    if(!url&&!isCompactDemandType(d.demandType))throw new Error('请填写素材URL。');
     if(url&&!isMaterialAddress(url))throw new Error('请填写有效的 HTTP/HTTPS 链接或局域网共享路径。');
     const mats=store.materials.filter(m=>m.demandId===demandId&&!m.deletedAt);
     let material;
@@ -252,16 +332,17 @@
     const naming=namingProvider?namingProvider(d,{owner,completionDate,version}):null;
     const at=now(),previous=d.status;
     Object.assign(d,{status,owner,executionOwner:owner,executionUrl:url,executionUrlMode:input.urlMode==='auto'?'auto':'manual',completionDate,version,productionDays:days,executionUpdatedAt:at,completedAt:status==='已完成'?completionDate:'',executionMethod:d.executionMethod||'人工制作'});
+    if(reexecuting)d.executionMaterialId='';
     if(naming)d.executionMaterialName=naming.missing?.length?'':naming.name;
     if(status==='制作中'&&!d.startedAt)d.startedAt=at;
     if(material||url||status==='已完成') {
       const metadata={...Object.fromEntries(materialBusinessFields.filter(key=>Object.hasOwn(d,key)).map(key=>[key,clone(d[key])])),type:({IMG:'图片',VID:'视频',GIF:'GIF'}[d.materialType]||d.materialType||'图片'),url,deliveredBy:owner,deliveredAt:completionDate,version,productionDays:days,updatedAt:at};
       if(naming){metadata.name=naming.missing?.length?'':naming.name;metadata.namingRuleVersion='visual-schedule-v1';if(material?.name&&material.name!==metadata.name&&!material.legacyName)metadata.legacyName=material.name;}
       if(material)Object.assign(material,metadata);
-      else{material={id:uid('MAT'),demandId,name:d.title,type:({IMG:'图片',VID:'视频',GIF:'GIF'}[d.materialType]||d.materialType||'图片'),originalCode:'',sourceType:'人工制作',source:{system:'PLATFORM'},createdAt:at,...metadata};store.materials.push(material);}
+      else{material={id:uid('MAT'),demandId,name:d.title,type:({IMG:'图片',VID:'视频',GIF:'GIF'}[d.materialType]||d.materialType||'图片'),originalCode:'',sourceType:'人工制作',source:{system:'PLATFORM'},createdAt:at,createdBy:actor,...metadata};store.materials.push(material);}
       d.executionMaterialId=material.id;
     }
-    appendLog(d,'执行需求',progressLabel(previous)+' → '+progressLabel(status)+'；制作人：'+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+(days===null?'未计算':days+'天')+(material?'；素材：'+material.id:''),actor);
+    appendLog(d,reexecuting?'重新执行需求':'执行需求',progressLabel(previous)+' → '+progressLabel(status)+(d.demandType===influencerDemandType?'；帖子编号：':'；制作人：')+owner+'；完成日期：'+completionDate+'；版本：'+version+'；制作周期：'+(days===null?'未计算':days+'天')+(material?'；素材：'+material.id:''),actor);
     return {demand:d,material:material||null};
   }
   function saveVisualExecution(store,demandId,input,actor='管理员',validOwners=[]) {
@@ -270,12 +351,12 @@
     assertDemandMutable(demand);
     return saveDemandExecution(store,demandId,input,actor,validOwners);
   }
-  function demandDeliverySummary(store,demandId) {
+  function demandDeliverySummary(store,demandId,workdays=false) {
     const d=store.demands.find(d=>d.id===demandId);
     if(!d)return null;
     if(d.submissionState==='draft'){
       if(!d.completionDate&&!d.version&&!d.executionUrl)return null;
-      const days=productionDays(d.requestDate,d.completionDate);
+      const days=productionDays(d.requestDate,d.completionDate,workdays);
       return {name:d.executionMaterialName||'',url:d.executionUrl||'',version:d.version||'',owner:d.executionOwner??d.owner??'',completionDate:d.completionDate||'',productionDays:days!==null&&days>=0?days:null};
     }
     if(!d.executionUpdatedAt&&!d.materialUrlUpdatedAt)return null;
@@ -283,7 +364,8 @@
     const material=store.materials.find(m=>m.id===d.executionMaterialId&&m.demandId===d.id);
     if(!d.executionUpdatedAt)return {name:material?.name||'',url:d.executionUrl||'',version:'',owner:'',completionDate:'',productionDays:null};
     const date=d.completionDate||'';
-    return {name:d.executionMaterialName??material?.name??'',url:Object.prototype.hasOwnProperty.call(d,'executionUrl')?d.executionUrl:material?.url||'',version:d.version||'',owner:Object.prototype.hasOwnProperty.call(d,'executionOwner')?d.executionOwner:d.owner||'',completionDate:date,productionDays:typeof d.productionDays==='number'?d.productionDays:productionDays(d.requestDate,date)};
+    const days=!workdays&&typeof d.productionDays==='number'?d.productionDays:productionDays(d.requestDate,date,workdays);
+    return {name:d.executionMaterialName??material?.name??'',url:Object.prototype.hasOwnProperty.call(d,'executionUrl')?d.executionUrl:material?.url||'',version:d.version||'',owner:Object.prototype.hasOwnProperty.call(d,'executionOwner')?d.executionOwner:d.owner||'',completionDate:date,productionDays:days};
   }
   const META_ADS='Meta Ads', GOOGLE_ADS='Google Ads';
   const advertisingPlatforms=[META_ADS,GOOGLE_ADS];
@@ -340,7 +422,7 @@
     const candidates=value.match(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*/g)||[];
     return candidates.reduce((identifier,candidate)=>candidate.length>identifier.length?candidate:identifier,'');
   }
-  function googleAdvertisingNameState({campaignType,sublevelType,spu,materialCategory,materialVersion,landingPage,promoter,adCreatedAt}) {
+  function googleAdvertisingNameState({campaignType,sublevelType,spu,materialCategory,materialVersion,landingPage,promoter,adCreatedAt},dateLabel='广告创建时间') {
     const token=advertisingNameToken;
     const sublevels=googleAdFieldValues(googleAdFieldValues(sublevelType).map(googleSublevelIdentifier));
     const spus=googleAdFieldValues(googleAdFieldValues(spu).flatMap(value=>value.split(/[、，,；;+\r\n]+/)));
@@ -351,7 +433,7 @@
       [token(materialCategory,'素材类型')],
       [token(materialVersion,'素材版本')],
       [token(String(landingPage??'').replaceAll('/',''),'落地页')],
-      [token(promoter,'推广人'),token((dateValue(adCreatedAt)||'').replaceAll('-',''),'广告创建时间')]
+      [token(promoter,'推广人'),token((dateValue(adCreatedAt)||'').replaceAll('-',''),dateLabel)]
     ]);
   }
   function googleAdRequiresMaterialUrl(materialId,existingUrl) {
@@ -409,7 +491,7 @@
       const demand=material?store.demands.find(d=>d.id===material.demandId):null;
       const adCreatedAt=advertisingDate(input.adCreatedAt);
       const materialUrl=text('materialUrl',2048);
-      if(!adCreatedAt)throw new Error('请填写有效的广告创建时间。');
+      if(!adCreatedAt)throw new Error('请填写有效的'+(config.googleDateLabel||'广告创建时间')+'。');
       const urlRequired=googleAdRequiresMaterialUrl(materialId,existing?.materialUrl);
       if((urlRequired||materialUrl)&&!isMaterialAddress(materialUrl))throw new Error('请填写有效的素材URL（HTTP/HTTPS 链接或局域网共享路径）。');
       const account=existing?.adAccountId?advertisingAccount(existing):googleAdvertisingAccount;
@@ -431,7 +513,7 @@
       }
       let adName;
       if(generatesName){
-        const generated=googleAdvertisingNameState({...fields,landingPage,promoter,adCreatedAt});
+        const generated=googleAdvertisingNameState({...fields,landingPage,promoter,adCreatedAt},config.googleDateLabel);
         if(!generated.name)throw new Error('请填写可用于广告命名的'+generated.missing.join('、')+'。');
         if(generated.name.length>2048)throw new Error('生成的广告名称最多2048个字符，请缩短命名字段。');
         adName=generated.name;
@@ -465,11 +547,53 @@
     if(ids.some(id=>!eligible.has(id)||!canDeleteMaterial(store,store.materials.find(m=>m.id===id))))throw new Error('仅支持批量删除未创建过广告命名的素材，请先取消勾选广告命名数>0的素材');
     const next=clone(store);ids.forEach(id=>deleteMaterial(next,id,actor));store.materials=next.materials;return ids;
   }
+  function updateMaterialDetails(store,materialId,input,actor='管理员',config={}) {
+    const row=materialRows(store).find(item=>item.material.id===materialId);
+    if(!row||row.namingCount>0)throw new Error('仅支持编辑广告命名数为0的有效素材，请刷新列表后重试。');
+    const {material:m,demand:d}=row;
+    const version=String(input.version??'').trim(),completionDate=String(input.completionDate??''),url=String(input.url??'').trim();
+    if(!version||version.length>200)throw new Error('请填写版本，最多200个字符。');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(completionDate)||dateValue(completionDate)!==completionDate)throw new Error('请选择有效的完成日期。');
+    if(!isCompactDemandType(d.demandType)&&dateValue(d.requestDate)>completionDate)throw new Error('完成日期不能早于下需日期。');
+    if(!url&&!isCompactDemandType(d.demandType))throw new Error('请填写素材URL。');
+    if(url&&!isMaterialAddress(url))throw new Error('请填写有效的 HTTP/HTTPS 链接或局域网共享路径。');
+    const previousVersion=materialVersion(m,d),previousDate=dateValue(m.deliveredAt||d.completionDate)||'';
+    const changeVersion=version!==previousVersion,changeDate=completionDate!==previousDate,changeUrl=url!==String(m.url||'').trim();
+    if(!changeVersion&&!changeDate&&!changeUrl)return {material:m,demand:d};
+    const siblings=store.materials.filter(item=>item.demandId===d.id&&!item.deletedAt);
+    const primary=siblings.find(item=>item.id===d.executionMaterialId)||(siblings.length===1?siblings[0]:null);
+    const syncDemand=primary?.id===materialId||changeUrl;
+    const at=now(),days=productionDays(d.requestDate,completionDate,true);
+    const metadata={version,deliveredAt:completionDate,productionDays:days,url,updatedAt:at};
+    const naming=config.naming?.(m,d,{version,completionDate});
+    if(naming?.name&&!naming.missing?.length){
+      metadata.name=naming.name;metadata.namingRuleVersion='visual-schedule-v1';
+      if(m.name&&m.name!==naming.name&&!m.legacyName)metadata.legacyName=m.name;
+    }
+    const detail='素材：'+materialId+(changeVersion?'；版本：'+previousVersion+' → '+version:'')+(changeDate?'；完成日期：'+(previousDate||'空')+' → '+completionDate:'')+(changeUrl?'；素材URL已更新':'');
+    // Preserve the effective values of other historical materials that still inherit demand fields.
+    if(syncDemand){
+      for(const sibling of siblings){
+        if(sibling.id===materialId)continue;
+        if(version!==d.version&&!sibling.version)sibling.version=materialVersion(sibling,d);
+        if(completionDate!==d.completionDate&&!sibling.deliveredAt&&d.completionDate)sibling.deliveredAt=d.completionDate;
+      }
+    }
+    Object.assign(m,metadata);appendLog(m,'编辑素材',detail,actor);
+    if(syncDemand){
+      Object.assign(d,{executionMaterialId:m.id,version,completionDate,productionDays:days,executionUpdatedAt:at,
+        executionMaterialName:m.name||'',executionOwner:m.deliveredBy||d.executionOwner||d.owner||'',executionUrl:url,
+        executionUrlMode:input.urlMode==='auto'?'auto':'manual',completedAt:completionDate});
+      if(changeUrl)d.materialUrlUpdatedAt=at;
+    }
+    appendLog(d,'编辑素材',detail,actor);
+    return {material:m,demand:d};
+  }
   function sourceKey(source) {return JSON.stringify([source.system,source.baseId,source.tableId,source.recordId,source.entity,source.split||'0']);}
   function appendLog(demand, action, detail, actor='管理员') {demand.logs=demand.logs||[];demand.logs.unshift({id:uid('LOG'),at:now(),actor,action,detail});demand.updatedAt=now();}
   function completionIssue(store,demand) {
-    if(!demandTypes.some(type=>type.value===demand.demandType))return '请先补充需求类型。';
-    if(!store.materials.some(m=>m.demandId===demand.id&&!m.deletedAt&&(demand.demandType==='ad-team'||isMaterialAddress(m.url))))return '确认完成前，请记录该份素材地址（URL）。';
+    if(!currentDemandTypes.some(type=>type.value===demand.demandType))return '请先补充需求类型。';
+    if(!store.materials.some(m=>m.demandId===demand.id&&!m.deletedAt&&(isCompactDemandType(demand.demandType)||isMaterialAddress(m.url))))return '确认完成前，请记录该份素材地址（URL）。';
     return '';
   }
   function assertCompletion(store,demand) {const issue=completionIssue(store,demand);if(issue)throw new Error(issue);}
@@ -485,6 +609,14 @@
     const naming=store.namings.find(n=>n.id===id);if(!naming||naming.deletedAt)throw new Error('广告记录不存在或已删除，请刷新列表。');
     Object.assign(naming,{deletedAt:now(),deletedBy:actor});appendLog(naming,'删除投放广告','广告记录从业务列表移除，关联素材保留',actor);
     return naming;
+  }
+  function deleteAdvertisingNamings(store,ids,actor='管理员'){
+    const selected=[...new Set(ids)];
+    if(!selected.length)throw new Error('请先勾选广告命名记录。');
+    const next=clone(store);
+    selected.forEach(id=>deleteAdvertisingNaming(next,id,actor));
+    store.namings=next.namings;
+    return selected;
   }
   function advertisingRows(store) {
     return store.namings.flatMap(naming=>{
@@ -508,43 +640,76 @@
   }
   function advertisingRecordContext(store,n,material) {
     const demand=store.demands.find(d=>d.id===material?.demandId);
-    return {adName:n.adName||'',materialId:material?.id||'',platform:normalizeAdvertisingPlatform(n.platform)||META_ADS,spu:n.spuSnapshot??material?.spu??demand?.spu??'',adPage:n.adPage||'',materialSource:n.materialSource||'',promoter:n.promoter??n.createdBy??'',completionDate:dateValue(n.completionDateSnapshot||material?.deliveredAt||material?.completionDate||demand?.completionDate),adCreatedAt:dateValue(n.adCreatedAt||n.createdAt)||'',materialUrl:n.materialUrl??material?.url??'',materialVersion:n.materialVersion??material?.version??demand?.version??'',campaignType:n.campaignType||'',sublevelType:n.sublevelType||'',materialCategory:advertisingMaterialCategory(n,material,demand)};
+    return {adName:n.adName||'',materialId:material?.id||'',materialName:material?.name||'',landingPage:n.landingPage||'',adAccountId:advertisingAccount(n).value,adId:n.adId||'',createdAt:n.createdAt||'',creator:n.createdBy||n.createdById||'',platform:normalizeAdvertisingPlatform(n.platform)||META_ADS,spu:n.spuSnapshot??material?.spu??demand?.spu??'',adPage:n.adPage||'',materialSource:n.materialSource||'',promoter:n.promoter??n.createdBy??'',completionDate:dateValue(n.completionDateSnapshot||material?.deliveredAt||material?.completionDate||demand?.completionDate),adCreatedAt:dateValue(n.adCreatedAt||n.createdAt)||'',materialUrl:n.materialUrl??material?.url??'',materialVersion:n.materialVersion??material?.version??demand?.version??'',campaignType:n.campaignType||'',sublevelType:n.sublevelType||'',materialCategory:advertisingMaterialCategory(n,material,demand)};
   }
   const googleAdvertisingMultiFilters=Object.fromEntries(['campaignType','sublevelType','materialCategory'].map(key=>[key,googleAdvertisingFields[key]]));
   const googleAdvertisingMultiKeys=Object.keys(googleAdvertisingMultiFilters);
+  const advertisingMultiFilters=['adPage','materialSource','promoter'];
   const advertisingFilterDefaults={platform:META_ADS,adName:'',materialId:'',spu:'',adPage:'',materialSource:'',promoter:'',completionStart:'',completionEnd:'',createdStart:'',createdEnd:''};
-  function normalizeAdvertisingFilters(input={}) {
-    const f=Object.fromEntries(Object.entries(advertisingFilterDefaults).map(([key,value])=>[key,typeof input?.[key]==='string'?input[key].trim().slice(0,200):value]));
+  const sharedCurrentAdFilters={platform:META_ADS,adName:'',spu:'',landingPage:'',promoter:'',adId:'',recordCreatedStart:'',recordCreatedEnd:'',creator:''};
+  const metaCurrentAdFilters={...sharedCurrentAdFilters,materialId:'',materialName:'',adPage:'',materialSource:'',adAccountId:'',completionStart:'',completionEnd:''};
+  const googleCurrentAdFilters={...sharedCurrentAdFilters,campaignType:'',sublevelType:'',materialCategory:'',materialVersion:'',launchStart:'',launchEnd:''};
+  const metaCurrentAdMultiFields=['adPage','materialSource','adAccountId','promoter','creator'];
+  const googleCurrentAdMultiFields=[...googleAdvertisingMultiKeys,'materialVersion','promoter','creator'];
+  function normalizeAdvertisingFilters(input={},multiple=false) {
+    if(multiple){
+      const platform=normalizeAdvertisingPlatform(input?.platform)||META_ADS,google=platform===GOOGLE_ADS;
+      const f=normalizeFilterFields(input,google?googleCurrentAdFilters:metaCurrentAdFilters,google?googleCurrentAdMultiFields:metaCurrentAdMultiFields);
+      f.platform=platform;
+      // Previously, the Google Ads business date used the createdStart/End filter keys.
+      if(google){
+        if(input?.launchStart===undefined)f.launchStart=String(input?.createdStart||'').trim().slice(0,200);
+        if(input?.launchEnd===undefined)f.launchEnd=String(input?.createdEnd||'').trim().slice(0,200);
+      }
+      return f;
+    }
+    const f=normalizeFilterFields(input,advertisingFilterDefaults);
     f.platform=normalizeAdvertisingPlatform(f.platform)||META_ADS;
-    for(const key of f.platform===GOOGLE_ADS?['materialId','adPage','materialSource','completionStart','completionEnd']:['createdStart','createdEnd'])f[key]='';
+    for(const key of f.platform===GOOGLE_ADS?['materialId','adPage','materialSource','completionStart','completionEnd']:['createdStart','createdEnd'])f[key]=Array.isArray(f[key])?[]:'';
     if(f.platform===GOOGLE_ADS)for(const key of googleAdvertisingMultiKeys){
       const values=Array.isArray(input?.[key])?input[key]:[];
       f[key]=[...new Set(values.filter(value=>typeof value==='string').map(value=>value.trim()).filter(Boolean))].sort();
     }
     return f;
   }
-  function validateAdvertisingFilters(input) {
-    const f=normalizeAdvertisingFilters(input),google=f.platform===GOOGLE_ADS,start=google?f.createdStart:f.completionStart,end=google?f.createdEnd:f.completionEnd,label=google?'广告创建时间':'素材完成日期';
-    if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error(label+'格式无效，请重新选择日期。');
-    if(start&&end&&start>end)throw new Error(label+'开始日期不能晚于结束日期。');
+  function validateAdvertisingFilters(input,multiple=false) {
+    const f=normalizeAdvertisingFilters(input,multiple),google=f.platform===GOOGLE_ADS;
+    const ranges=multiple?[[google?'launch':'completion',google?'广告上线日期':'素材完成日期'],['recordCreated','创建时间']]:[[google?'created':'completion',google?'广告创建时间':'素材完成日期']];
+    for(const [prefix,label] of ranges){
+      const start=f[prefix+'Start'],end=f[prefix+'End'];
+      if([start,end].some(value=>value&&(!/^\d{4}-\d{2}-\d{2}$/.test(value)||dateValue(value)!==value)))throw new Error(label+'格式无效，请重新选择日期。');
+      if(start&&end&&start>end)throw new Error(label+'开始日期不能晚于结束日期。');
+    }
     return f;
   }
-  function advertisingMatchesFilters(context,input) {
+  function advertisingMatchesFilters(context,input,multiple=false) {
     if(input?.platform&&!normalizeAdvertisingPlatform(input.platform))return false;
-    const f=normalizeAdvertisingFilters(input),google=f.platform===GOOGLE_ADS,date=dateValue(google?context.adCreatedAt:context.completionDate);
+    const f=normalizeAdvertisingFilters(input,multiple),google=f.platform===GOOGLE_ADS,date=dateValue(google?context.adCreatedAt:context.completionDate);
+    if(multiple){
+      if((normalizeAdvertisingPlatform(context.platform)||META_ADS)!==f.platform)return false;
+      const textFields=['adName','spu','landingPage','adId',...(google?[]:['materialId','materialName'])];
+      const multiFields=google?googleCurrentAdMultiFields:metaCurrentAdMultiFields;
+      const inRange=(prefix,value)=>{
+        const normalized=dateValue(value),start=f[prefix+'Start'],end=f[prefix+'End'];
+        return (!start||(Boolean(normalized)&&normalized>=start))&&(!end||(Boolean(normalized)&&normalized<=end));
+      };
+      return textFields.every(key=>!f[key]||String(context[key]||'').toLowerCase().includes(f[key].toLowerCase()))&&
+        multiFields.every(key=>!f[key].length||googleAdFieldValues(context[key]).some(value=>f[key].includes(value)))&&
+        inRange(google?'launch':'completion',date)&&inRange('recordCreated',context.createdAt);
+    }
     const start=google?f.createdStart:f.completionStart,end=google?f.createdEnd:f.completionEnd;
     return (normalizeAdvertisingPlatform(context.platform)||META_ADS)===f.platform&&
       ['adName','materialId','spu'].every(key=>!f[key]||String(context[key]||'').toLowerCase().includes(f[key].toLowerCase()))&&
-      ['adPage','materialSource','promoter'].every(key=>!f[key]||context[key]===f[key])&&
+      advertisingMultiFilters.every(key=>matchesFilterValue(context[key],f[key]))&&
       (!google||googleAdvertisingMultiKeys.every(key=>!f[key].length||googleAdFieldValues(context[key]).some(value=>f[key].includes(value))))&&
       (!start||(Boolean(date)&&date>=start))&&(!end||(Boolean(date)&&date<=end));
   }
   function advertisingFilterStorageKey(userId) {filterStorageKey(userId);return 'ai-visual-advertising-filters-v1:'+encodeURIComponent(userId);}
-  function encodeAdvertisingFilterPreference(userId,filters) {advertisingFilterStorageKey(userId);return JSON.stringify({version:1,kind:'advertising',userId,filters:validateAdvertisingFilters(filters)});}
-  function decodeAdvertisingFilterPreference(userId,value) {
+  function encodeAdvertisingFilterPreference(userId,filters,multiple=false) {advertisingFilterStorageKey(userId);return JSON.stringify({version:1,kind:'advertising',userId,filters:validateAdvertisingFilters(filters,multiple)});}
+  function decodeAdvertisingFilterPreference(userId,value,multiple=false) {
     advertisingFilterStorageKey(userId);const preference=JSON.parse(value);
     if(preference?.version!==1||preference.kind!=='advertising'||preference.userId!==userId||!preference.filters||typeof preference.filters!=='object'||Array.isArray(preference.filters))throw new Error('已保存的广告筛选条件无法读取，请重新设置并保存。');
-    return validateAdvertisingFilters(preference.filters);
+    return validateAdvertisingFilters(preference.filters,multiple);
   }
   function materialRows(store) {
     const namingCounts=new Map();
@@ -617,7 +782,7 @@
         record={...v,id:uid('VD'),title:v.title,status:canonicalProgressStatus(v.status,v.owner),...(v.status&&!statuses.includes(v.status)?{legacyStatus:v.status}:{}),requestDate:dateValue(v.requestDate)||'',ddl:dateValue(v.ddl)||'',createdAt:at,updatedAt:at,executionMethod:v.executionMethod||'人工制作',historical:true,source,logs:[]};
         appendLog(record,'历史导入','来源记录 '+source.recordId+'；批次 '+batchId,actor);
       } else if(input.entity==='materials') {
-        record={...v,id:uid('MAT'),demandId:p.parentId,type:({IMG:'图片',VID:'视频'})[v.type]||v.type,deliveredAt:dateValue(v.deliveredAt)||'',createdAt:at,updatedAt:at,source};
+        record={...v,id:uid('MAT'),demandId:p.parentId,type:({IMG:'图片',VID:'视频'})[v.type]||v.type,deliveredAt:dateValue(v.deliveredAt)||'',createdAt:at,createdBy:v.createdBy||actor,updatedAt:at,source};
         const d=store.demands.find(d=>d.id===p.parentId);appendLog(d,'导入交付素材',record.name+' · '+record.id,actor);
       } else {
         record={...v,id:uid('ADN'),materialId:p.parentId,createdBy:v.createdBy||actor,createdAt:at,updatedAt:at,source};
@@ -628,7 +793,7 @@
     const batch={id:batchId,at,actor,entity:input.entity,baseId:input.baseId,tableId:input.tableId,fileName:input.fileName||'',total:plans.length,imported,skipped:plans.filter(p=>p.outcome==='skip').length,issues:plans.filter(p=>p.outcome==='issue').map(p=>({line:p.line,sourceRecordId:p.source.recordId,reason:p.reason,rawSnapshot:p.source.rawSnapshot})),mapping:clone(input.mapping)};
     store.batches.unshift(batch);return batch;
   }
-  const api={executionStatuses,progressLabel,canExecuteDemand,META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
+  const api={currentDemandTypes,influencerDemandType,isCompactDemandType,usesDemandPostNumber,demandCreator,demandDimensionFilters,filterValues,executionStatuses,progressLabel,canExecuteDemand,canReexecuteDemand,META_ADS,GOOGLE_ADS,googleAdvertisingFields,googleAdFieldValues,googleAdvertisingMultiFilters,normalizeAdvertisingPlatform,advertisingAccount,googleAdvertisingAccount,advertisingTimestamp,isDemandFieldRequired,advertisingAccounts,createAdvertisingNamings,deleteMaterials,usesPostNumber,postNumberWarning,validateProducer,adTeamDemandFormSections,prepareAdTeamDemandValues,activeMaterialAdvertisements,canDeleteMaterial,deleteMaterial,deleteAdvertisingNaming,deleteAdvertisingNamings,canDeleteDemand,deleteDemand,normalizeAdvertisingRelations,advertisingRecordContext,advertisingFilterDefaults,normalizeAdvertisingFilters,validateAdvertisingFilters,advertisingMatchesFilters,advertisingFilterStorageKey,encodeAdvertisingFilterPreference,decodeAdvertisingFilterPreference,advertisingPlatforms,advertisingNameState,googleAdvertisingNameState,googleAdvertisingNameRuleVersion,googleAdRequiresMaterialUrl,advertisingNamingContext,saveAdvertisingNaming,materialFilterDefaults,normalizeMaterialFilters,validateMaterialFilters,materialMatchesFilters,materialFilterStorageKey,encodeMaterialFilterPreference,decodeMaterialFilterPreference,updateMaterialUrl,assignDemandProducer,materialLinkTarget,isUncPath,isMaterialAddress,generateMaterialAddress,saveDemandExecution,demandDeliverySummary,initialProgressStatus,canonicalProgressStatus,normalizeProgressStore,canModifyDemand,assertDemandMutable,prepareDemandRecord,visualProgressStatuses,legacyStatuses,productionDays,visualExecutionDefaults,saveVisualExecution,demandFilterDefaults,normalizeDemandFilters,validateDemandFilters,demandMatchesFilters,filterStorageKey,encodeFilterPreference,decodeFilterPreference,assertMaterialWrite,demandTypes,completionIssue,assertCompletion,advertisingRows,materialRows,materialVersion,materialCreator,updateMaterialDetails,namingsForDemand,statuses,transitions,now,uid,clone,parseCsv,toCsv,safeUrl,dateValue,sourceKey,appendLog,changeStatus,planImport,applyImport};
   if(typeof module!=='undefined'&&module.exports)module.exports=api;else global.VisualDemandRecordsModel=api;
 })(typeof window!=='undefined'?window:globalThis);
 

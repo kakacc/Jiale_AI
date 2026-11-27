@@ -62,6 +62,10 @@
 .vd-ad-multi-field .asset-multi-option input{min-height:0;padding:0}
 .vd-ad-multi-field .asset-multi-option input:focus-visible{outline:2px solid #8aa9ee;outline-offset:2px}
 .vd-ad-multi-field summary[aria-invalid="true"]{border-color:#f56c6c}
+.vd-filter-collapsed>:nth-child(n+5):not(.vd-material-filter-footer):not(.vd-ad-filter-footer){display:none}
+@media(max-width:1100px){.vd-filter-collapsed>:nth-child(n+3):not(.vd-material-filter-footer):not(.vd-ad-filter-footer){display:none}}
+@media(max-width:600px){.vd-filter-collapsed>:nth-child(n+2):not(.vd-material-filter-footer):not(.vd-ad-filter-footer){display:none}}
+.vd-material-table.vd-material-table-current{min-width:1457px}
 
 /* V14: visible production days, explicit material IDs, and name-based material detail links. */
 .vd-demand-table{min-width:1240px}.vd-demand-table td.vd-demand-cycle{min-width:80px;white-space:nowrap;font-variant-numeric:tabular-nums}.vd-demand-table td:last-child{min-width:135px}.vd-copyable-material-name{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}.vd-copyable-material-name>span{overflow-wrap:anywhere}.vd-copy-material-name{flex:none;font-size:12px}.vd-material-table td:last-child{min-width:175px}.vd-ad-table{min-width:1390px}.vd-ad-table td:nth-child(2){min-width:130px;max-width:170px;overflow-wrap:anywhere}.vd-ad-table td:nth-child(3){min-width:260px;max-width:320px;overflow-wrap:anywhere}.vd-ad-table td:nth-child(4){min-width:90px}.vd-ad-table td:nth-child(5){min-width:135px}.vd-ad-table td:nth-child(6){min-width:125px}.vd-ad-table td:last-child{min-width:90px}.vd-ad-material-name{display:block;width:100%;padding:0;text-align:left;white-space:normal;line-height:1.7;overflow-wrap:anywhere}
@@ -109,11 +113,38 @@
 .vd-google-ad-create .vd-batch-naming-preview h3{margin:0 0 8px}
 .vd-google-ad-create .vd-batch-preview-item{margin-bottom:0}
 .vd-ad-table-v24.vd-google-ad-table{min-width:1870px}
+.vd-ad-table-v24.vd-ad-table-current{min-width:2252px}
+.vd-ad-table-v24.vd-google-ad-table.vd-ad-table-current{min-width:2192px}
+.vd-ad-table-current .vd-ad-check-col{width:42px;padding:12px 10px;text-align:center}
+.vd-ad-table-current tr.is-selected td{background:#f3f7ff}
 
 #mainDialog:has(.vd-visual-execution) .dialog-foot{justify-content:flex-end}
 #mainDialog:has(.vd-visual-execution) .dialog-foot>span,
 #mainDialog:has(.vd-visual-execution) .dialog-cancel{display:none}
 #mainDialog:has(.vd-visual-execution) #dialogConfirm::after{content:"⌄";margin-left:8px}
+.vd-execution-material-name{display:flex;flex-direction:column;gap:7px;color:#606266;font-size:12px;min-width:0}
+.vd-execution-name-heading{display:flex;align-items:center;justify-content:space-between;gap:12px}
+
+#mainDialog:has(.vd-batch-execution){width:min(1240px,calc(100vw - 32px))}
+.vd-batch-execution-scroll{max-height:58vh;overflow:auto;border:1px solid #e5e9f2;border-radius:6px}
+.vd-batch-execution-table{width:100%;min-width:980px;table-layout:fixed;border-collapse:separate;border-spacing:0;color:#454d5b;font-size:12px}
+.vd-batch-execution-table th{position:sticky;top:0;z-index:1;padding:12px;text-align:left;color:#606266;background:#f6f8fc;border-bottom:1px solid #e5e9f2;font-weight:500}
+.vd-batch-execution-table th:nth-child(1){width:17%}.vd-batch-execution-table th:nth-child(2){width:26%}.vd-batch-execution-table th:nth-child(3){width:32%}.vd-batch-execution-table th:nth-child(4){width:10%}.vd-batch-execution-table th:nth-child(5){width:15%}
+.vd-batch-execution-table td{padding:12px;vertical-align:top;border-bottom:1px solid #ebeef5;overflow-wrap:anywhere}
+.vd-batch-execution-table tr:last-child td{border-bottom:0}
+.vd-batch-execution-table td strong,.vd-batch-execution-table td small{display:block;line-height:1.6}
+.vd-batch-execution-table td small{margin-top:4px;color:#909399;font-size:11px}
+.vd-batch-execution-table .naming-preview-field{min-width:0;font-size:12px;white-space:normal}
+.vd-batch-name-preview{display:flex;align-items:center;gap:6px;padding-right:5px}
+.vd-batch-name-preview output{flex:1;min-width:0}
+.vd-batch-name-copy{position:relative;flex:0 0 26px;width:26px;height:26px;border:0;border-radius:4px;background:transparent;color:#2563eb;cursor:pointer}
+.vd-batch-name-copy::before,.vd-batch-name-copy::after{content:"";position:absolute;border:1.5px solid currentColor;border-radius:2px}
+.vd-batch-name-copy::before{inset:5px 8px 8px 5px;border-right:0;border-bottom:0}
+.vd-batch-name-copy::after{inset:8px 5px 5px 8px}
+.vd-batch-name-copy:hover:not(:disabled){background:#eaf1ff}
+.vd-batch-name-copy:focus-visible{outline:2px solid #8aa9ee;outline-offset:1px}
+.vd-batch-name-copy:disabled{color:#a8abb2;cursor:not-allowed}
+.vd-batch-execution-table input{box-sizing:border-box;width:100%;min-width:0;height:34px;padding:6px 8px;border:1px solid #dcdfe6;border-radius:4px;background:#fff;font:inherit;color:#454d5b}
 .vd-execution-priority input[readonly]{background:#f3f5f8;color:#606266}
 .vd-execution-status-menu{position:fixed;inset:auto;margin:0;min-width:146px;padding:4px;border:1px solid #dfe6f1;border-radius:6px;background:#fff;box-shadow:0 8px 20px #2334531c}
 .vd-execution-status-menu button{display:block;width:100%;padding:8px 12px;text-align:left;border:0;border-radius:4px;background:#fff;color:#303133}
